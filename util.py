@@ -1379,7 +1379,7 @@ def guess_tixcraft_question(driver, question_text):
         if len(question_text) > 0:
             answer_list = get_answer_list_from_question_string(None, question_text)
     else:
-        answer_list = [answer_list]
+        answer_list = [inferred_answer_string]
 
     return answer_list
 
