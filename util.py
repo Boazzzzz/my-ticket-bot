@@ -1970,11 +1970,10 @@ def launch_maxbot(script_name="chrome_tixcraft", filename="", homepage="", kktix
             cmd = script_name + '.exe ' + ' '.join(cmd_argument)
         subprocess.Popen(cmd, shell=True, cwd=working_dir)
     else:
-        interpreter_binary = 'python'
-        interpreter_binary_alt = 'python3'
+        interpreter_binary = sys.executable
+        interpreter_binary_alt = 'python'
         if platform.system() != 'Windows':
-            interpreter_binary = 'python3'
-            interpreter_binary_alt = 'python'
+            interpreter_binary_alt = 'python3'
         print("execute in shell mode.")
 
         try:
