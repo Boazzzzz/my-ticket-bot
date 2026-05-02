@@ -2152,6 +2152,44 @@ async def nodriver_current_url(tab):
             url = ''.join(url_array)
     return url, is_quit_bot
 
+def is_tixcraft_rate_limited_page(page_text):
+    if page_text is None:
+        return False
+
+    rate_limit_keywords = [
+        "too many requests",
+        "temporarily blocked",
+        "access denied",
+        "rate limit",
+        "請稍後",
+        "稍後再試",
+        "過於頻繁",
+        "頻繁",
+        "暫時無法",
+        "拒絕存取",
+    ]
+    page_text_lower = page_text.lower()
+    for keyword in rate_limit_keywords:
+        if keyword.lower() in page_text_lower:
+            return True
+    return False
+
+async def nodriver_pause_maxbot_for_rate_limit(tab, url):
+    if not "tixcraft.com" in url:
+        return False
+
+    is_rate_limited = False
+    try:
+        page_text = await tab.get_content()
+        is_rate_limited = is_tixcraft_rate_limited_page(page_text)
+    except Exception as exc:
+        print("rate limit check failed:", exc)
+
+    if is_rate_limited:
+        util.write_string_to_file(CONST_MAXBOT_INT28_FILE, "paused by rate limit guard")
+        print("Detected possible Tixcraft rate limit page. MAXBOT Paused.")
+    return is_rate_limited
+
 def nodriver_overwrite_prefs(conf):
     #print(conf.user_data_dir)
     prefs_filepath = os.path.join(conf.user_data_dir,"Default")
@@ -2264,6 +2302,7 @@ async def main(args):
         pass
 
     maxbot_last_reset_time = time.time()
+    maxbot_last_guard_check_time = 0
     is_quit_bot = False
     while True:
         time.sleep(0.05)
@@ -2309,6 +2348,14 @@ async def main(args):
             # sleep more when paused.
             time.sleep(0.1)
             continue
+
+        if "tixcraft.com" in url:
+            now = time.time()
+            if now - maxbot_last_guard_check_time >= 5:
+                maxbot_last_guard_check_time = now
+                if await nodriver_pause_maxbot_for_rate_limit(tab, url):
+                    time.sleep(0.1)
+                    continue
 
         # for kktix.cc and kktix.com
         if 'kktix.c' in url:
