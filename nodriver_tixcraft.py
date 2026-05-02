@@ -120,6 +120,7 @@ def get_config_dict(args):
         # start to overwrite config settings.
         with open(config_filepath) as json_data:
             config_dict = json.load(json_data)
+            config_dict["advanced"]["chrome_extension"] = False
 
             if not args.headless is None:
                 config_dict["advanced"]["headless"] = util.t_or_f(args.headless)

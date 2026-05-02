@@ -67,7 +67,7 @@
         "ticket_password_plaintext": "",
         "udn_password_plaintext": "",
         "ticketplus_password_plaintext": "",
-        "chrome_extension": true,
+        "chrome_extension": false,
         "disable_adjacent_seat": false,
         "hide_some_image": false,
         "block_facebook_network": false,

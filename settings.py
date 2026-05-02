@@ -659,7 +659,7 @@ def get_default_config():
     config_dict["advanced"]["udn_password_plaintext"] = ""
     config_dict["advanced"]["ticketplus_password_plaintext"] = ""
 
-    config_dict["advanced"]["chrome_extension"] = True
+    config_dict["advanced"]["chrome_extension"] = False
     config_dict["advanced"]["disable_adjacent_seat"] = False
     config_dict["advanced"]["hide_some_image"] = False
     config_dict["advanced"]["block_facebook_network"] = False
@@ -709,6 +709,8 @@ def load_json():
             pass
     else:
         config_dict = get_default_config()
+    if config_dict is not None:
+        config_dict["advanced"]["chrome_extension"] = False
     return config_filepath, config_dict
 
 def btn_restore_defaults_clicked():
@@ -1058,7 +1060,7 @@ def btn_save_act(slience_mode=False):
         config_dict["advanced"]["udn_password"] = util.encryptMe(config_dict["advanced"]["udn_password"])
         config_dict["advanced"]["ticketplus_password"] = util.encryptMe(config_dict["advanced"]["ticketplus_password"])
 
-        config_dict["advanced"]["chrome_extension"] = bool(chk_state_chrome_extension.get())
+        config_dict["advanced"]["chrome_extension"] = False
         config_dict["advanced"]["disable_adjacent_seat"] = bool(chk_state_adjacent_seat.get())
         config_dict["advanced"]["hide_some_image"] = bool(chk_state_hide_some_image.get())
         config_dict["advanced"]["block_facebook_network"] = bool(chk_state_block_facebook_network.get())
@@ -2105,10 +2107,10 @@ def AdvancedTab(root, config_dict, language_code, UI_PADDING_X):
 
     global chk_state_chrome_extension
     chk_state_chrome_extension = BooleanVar()
-    chk_state_chrome_extension.set(config_dict["advanced"]["chrome_extension"])
+    chk_state_chrome_extension.set(False)
 
     global chk_chrome_extension
-    chk_chrome_extension = Checkbutton(frame_group_header, text=translate[language_code]['enable'], variable=chk_state_chrome_extension)
+    chk_chrome_extension = Checkbutton(frame_group_header, text=translate[language_code]['enable'], variable=chk_state_chrome_extension, state=DISABLED)
     chk_chrome_extension.grid(column=1, row=group_row_count, sticky = W)
 
     group_row_count +=1
