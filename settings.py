@@ -594,7 +594,7 @@ def get_default_config():
     config_dict["ocr_captcha"] = {}
     config_dict["ocr_captcha"]["enable"] = True
     config_dict["ocr_captcha"]["beta"] = True
-    config_dict["ocr_captcha"]["force_submit"] = True
+    config_dict["ocr_captcha"]["force_submit"] = False
     config_dict["ocr_captcha"]["image_source"] = CONST_OCR_CAPTCH_IMAGE_SOURCE_CANVAS
     config_dict["webdriver_type"] = CONST_WEBDRIVER_TYPE_UC
 
