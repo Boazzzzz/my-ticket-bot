@@ -596,7 +596,7 @@ def get_default_config():
     config_dict["ocr_captcha"]["beta"] = True
     config_dict["ocr_captcha"]["force_submit"] = False
     config_dict["ocr_captcha"]["image_source"] = CONST_OCR_CAPTCH_IMAGE_SOURCE_CANVAS
-    config_dict["webdriver_type"] = CONST_WEBDRIVER_TYPE_UC
+    config_dict["webdriver_type"] = CONST_WEBDRIVER_TYPE_SELENIUM
 
     config_dict["date_auto_select"] = {}
     config_dict["date_auto_select"]["enable"] = True

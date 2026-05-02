@@ -341,6 +341,13 @@ def load_chromdriver_normal(config_dict, driver_type):
     if not os.path.exists(webdriver_path):
         os.mkdir(webdriver_path)
 
+    chrome_options = get_chrome_options(webdriver_path, config_dict)
+    try:
+        driver = webdriver.Chrome(service=Service(), options=chrome_options)
+    except Exception as exc:
+        if show_debug_message:
+            print("Selenium Manager launch failed:", exc)
+
     if not os.path.exists(chromedriver_path):
         print("WebDriver not exist, try to download to:", webdriver_path)
         chromedriver_autoinstaller_max.install(path=webdriver_path, make_version_dir=False)
@@ -351,9 +358,9 @@ def load_chromdriver_normal(config_dict, driver_type):
         print(CONST_CHROME_DRIVER_WEBSITE)
     else:
         chrome_service = Service(chromedriver_path)
-        chrome_options = get_chrome_options(webdriver_path, config_dict)
         try:
-            driver = webdriver.Chrome(service=chrome_service, options=chrome_options)
+            if driver is None:
+                driver = webdriver.Chrome(service=chrome_service, options=chrome_options)
         except Exception as exc:
             error_message = str(exc)
             if show_debug_message:

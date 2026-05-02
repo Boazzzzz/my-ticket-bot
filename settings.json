@@ -9,7 +9,7 @@
         "force_submit": false,
         "image_source": "canvas"
     },
-    "webdriver_type": "undetected_chromedriver",
+    "webdriver_type": "selenium",
     "date_auto_select": {
         "enable": true,
         "date_keyword": "",
