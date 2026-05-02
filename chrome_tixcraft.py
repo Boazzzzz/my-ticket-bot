@@ -6212,7 +6212,7 @@ def kktix_main(driver, url, config_dict):
                     print("搶票成功, 帳號:", kktix_account)
 
                     script_name = "chrome_tixcraft"
-                    if config_dict["advanced"]["webdriver_type"] == CONST_WEBDRIVER_TYPE_NODRIVER:
+                    if config_dict["webdriver_type"] == CONST_WEBDRIVER_TYPE_NODRIVER:
                         script_name = "nodriver_tixcraft"
                     threading.Thread(target=util.launch_maxbot, args=(script_name,"", url, kktix_account, kktix_password,"","false",)).start()
 
