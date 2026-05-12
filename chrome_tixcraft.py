@@ -10883,21 +10883,40 @@ def is_tixcraft_rate_limited_page(page_text):
     if page_text is None:
         return False
 
-    rate_limit_keywords = [
+    rate_limit_phrases = [
         "too many requests",
         "temporarily blocked",
         "access denied",
         "rate limit",
-        "請稍後",
+        "request rate limit",
+        "blocked due to excessive",
+        "請稍後再試",
+        "请稍后再试",
+        "請稍後再嘗試",
+        "请稍后再尝试",
+        "操作過於頻繁",
+        "操作过于频繁",
+        "操作太頻繁",
+        "操作太频繁",
         "稍後再試",
+        "稍后再试",
         "過於頻繁",
-        "頻繁",
-        "暫時無法",
+        "过于频繁",
+        "系統偵測到異常流量",
+        "系统检测到异常流量",
         "拒絕存取",
+        "拒绝存取",
+        "存取遭拒",
+        "访问被拒",
     ]
-    page_text_lower = page_text.lower()
-    for keyword in rate_limit_keywords:
-        if keyword.lower() in page_text_lower:
+    page_text_lower = " ".join(page_text.lower().split())
+    page_text_compact = "".join(page_text.lower().split())
+    for phrase in rate_limit_phrases:
+        phrase_lower = phrase.lower()
+        phrase_compact = "".join(phrase_lower.split())
+        if phrase_lower in page_text_lower:
+            return True
+        if phrase_compact in page_text_compact:
             return True
     return False
 
