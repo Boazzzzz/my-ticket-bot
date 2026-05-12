@@ -91,7 +91,7 @@ CONST_MAXBLOCK_EXTENSION_FILTER =[
 CONST_CHROME_VERSION_NOT_MATCH_EN="Please download the WebDriver version to match your browser version."
 CONST_CHROME_VERSION_NOT_MATCH_TW="請下載與您瀏覽器相同版本的WebDriver版本，或更新您的瀏覽器版本。"
 CONST_CHROME_DRIVER_WEBSITE = 'https://chromedriver.chromium.org/'
-CONST_TIXCRAFT_MIN_REFRESH_INTERVAL = 30
+CONST_TIXCRAFT_MIN_REFRESH_INTERVAL = 10
 
 CONST_CITYLINE_SIGN_IN_URL = "https://www.cityline.com/Login.html?targetUrl=https%3A%2F%2Fwww.cityline.com%2FEvents.html"
 CONST_FAMI_SIGN_IN_URL = "https://www.famiticket.com.tw/Home/User/SignIn"
