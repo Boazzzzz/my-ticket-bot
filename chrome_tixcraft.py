@@ -2102,6 +2102,8 @@ def tixcraft_auto_ocr(driver, ocr, away_from_keyboard_enable, previous_answer, C
     show_debug_message = True       # debug.
     show_debug_message = False      # online
 
+    global tixcraft_manual_ocr_prefill_key
+
     is_need_redo_ocr = False
     is_form_sumbited = False
 
@@ -2122,7 +2124,20 @@ def tixcraft_auto_ocr(driver, ocr, away_from_keyboard_enable, previous_answer, C
             print("previous_answer:", previous_answer)
             print("ocr_captcha_image_source:", ocr_captcha_image_source)
 
+        manual_ocr_page_key = ""
         if not away_from_keyboard_enable:
+            try:
+                manual_ocr_page_key = driver.current_url
+            except Exception as exc:
+                pass
+            if len(manual_ocr_page_key) == 0:
+                manual_ocr_page_key = domain_name
+
+            if not "tixcraft_manual_ocr_prefill_key" in globals():
+                tixcraft_manual_ocr_prefill_key = ""
+            if tixcraft_manual_ocr_prefill_key == manual_ocr_page_key:
+                return is_need_redo_ocr, previous_answer, is_form_sumbited
+
             inputed_value = ""
             try:
                 inputed_value = form_verifyCode.get_attribute('value')
@@ -2131,6 +2146,7 @@ def tixcraft_auto_ocr(driver, ocr, away_from_keyboard_enable, previous_answer, C
             if inputed_value is None:
                 inputed_value = ""
             if len(inputed_value.strip()) > 0:
+                tixcraft_manual_ocr_prefill_key = manual_ocr_page_key
                 return is_need_redo_ocr, previous_answer, is_form_sumbited
 
         ocr_start_time = time.time()
@@ -2139,6 +2155,9 @@ def tixcraft_auto_ocr(driver, ocr, away_from_keyboard_enable, previous_answer, C
         ocr_elapsed_time = ocr_done_time - ocr_start_time
         if show_debug_message:
             print("ocr elapsed time:", "{:.3f}".format(ocr_elapsed_time))
+
+        if not away_from_keyboard_enable:
+            tixcraft_manual_ocr_prefill_key = manual_ocr_page_key
 
         if ocr_answer is None:
             if away_from_keyboard_enable:
