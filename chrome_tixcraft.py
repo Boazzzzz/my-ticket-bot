@@ -2122,6 +2122,17 @@ def tixcraft_auto_ocr(driver, ocr, away_from_keyboard_enable, previous_answer, C
             print("previous_answer:", previous_answer)
             print("ocr_captcha_image_source:", ocr_captcha_image_source)
 
+        if not away_from_keyboard_enable:
+            inputed_value = ""
+            try:
+                inputed_value = form_verifyCode.get_attribute('value')
+            except Exception as exc:
+                pass
+            if inputed_value is None:
+                inputed_value = ""
+            if len(inputed_value.strip()) > 0:
+                return is_need_redo_ocr, previous_answer, is_form_sumbited
+
         ocr_start_time = time.time()
         ocr_answer = tixcraft_get_ocr_answer(driver, ocr, ocr_captcha_image_source, Captcha_Browser, domain_name)
         ocr_done_time = time.time()
