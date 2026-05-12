@@ -91,7 +91,8 @@ CONST_MAXBLOCK_EXTENSION_FILTER =[
 CONST_CHROME_VERSION_NOT_MATCH_EN="Please download the WebDriver version to match your browser version."
 CONST_CHROME_VERSION_NOT_MATCH_TW="請下載與您瀏覽器相同版本的WebDriver版本，或更新您的瀏覽器版本。"
 CONST_CHROME_DRIVER_WEBSITE = 'https://chromedriver.chromium.org/'
-CONST_TIXCRAFT_MIN_REFRESH_INTERVAL = 10
+CONST_TIXCRAFT_SAME_PAGE_REFRESH_LIMIT = 5
+CONST_TIXCRAFT_SAME_PAGE_REFRESH_PAUSE_SECONDS = 10
 
 CONST_CITYLINE_SIGN_IN_URL = "https://www.cityline.com/Login.html?targetUrl=https%3A%2F%2Fwww.cityline.com%2FEvents.html"
 CONST_FAMI_SIGN_IN_URL = "https://www.famiticket.com.tw/Home/User/SignIn"
@@ -10897,20 +10898,26 @@ def guarded_tixcraft_refresh(driver, reason):
         driver.refresh()
         return True
 
-    global tixcraft_last_refresh_time
-    if not "tixcraft_last_refresh_time" in globals():
-        tixcraft_last_refresh_time = 0
+    global tixcraft_refresh_guard_url
+    global tixcraft_refresh_guard_count
+    if not "tixcraft_refresh_guard_url" in globals():
+        tixcraft_refresh_guard_url = ""
+    if not "tixcraft_refresh_guard_count" in globals():
+        tixcraft_refresh_guard_count = 0
 
-    now = time.time()
-    elapsed = now - tixcraft_last_refresh_time
-    if elapsed < CONST_TIXCRAFT_MIN_REFRESH_INTERVAL:
-        util.write_string_to_file(CONST_MAXBOT_INT28_FILE, "paused by refresh guard")
-        print("Tixcraft refresh skipped and MAXBOT Paused.")
+    if url == tixcraft_refresh_guard_url:
+        tixcraft_refresh_guard_count += 1
+    else:
+        tixcraft_refresh_guard_url = url
+        tixcraft_refresh_guard_count = 1
+
+    if tixcraft_refresh_guard_count > CONST_TIXCRAFT_SAME_PAGE_REFRESH_LIMIT:
+        print("Tixcraft stayed on the same page after repeated refreshes.")
         print("reason:", reason)
-        print("elapsed seconds since last refresh:", "{:.1f}".format(elapsed))
-        return False
+        print("pause seconds:", CONST_TIXCRAFT_SAME_PAGE_REFRESH_PAUSE_SECONDS)
+        time.sleep(CONST_TIXCRAFT_SAME_PAGE_REFRESH_PAUSE_SECONDS)
+        tixcraft_refresh_guard_count = 1
 
-    tixcraft_last_refresh_time = now
     driver.refresh()
     return True
 
