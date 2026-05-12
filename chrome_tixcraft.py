@@ -91,6 +91,7 @@ CONST_MAXBLOCK_EXTENSION_FILTER =[
 CONST_CHROME_VERSION_NOT_MATCH_EN="Please download the WebDriver version to match your browser version."
 CONST_CHROME_VERSION_NOT_MATCH_TW="請下載與您瀏覽器相同版本的WebDriver版本，或更新您的瀏覽器版本。"
 CONST_CHROME_DRIVER_WEBSITE = 'https://chromedriver.chromium.org/'
+CONST_TIXCRAFT_MIN_REFRESH_INTERVAL = 30
 
 CONST_CITYLINE_SIGN_IN_URL = "https://www.cityline.com/Login.html?targetUrl=https%3A%2F%2Fwww.cityline.com%2FEvents.html"
 CONST_FAMI_SIGN_IN_URL = "https://www.famiticket.com.tw/Home/User/SignIn"
@@ -1208,7 +1209,7 @@ def tixcraft_date_auto_select(driver, url, config_dict, domain_name):
 
             # case 2: match one row is coming soon.
             try:
-                driver.refresh()
+                guarded_tixcraft_refresh(driver, "coming soon date")
             except Exception as exc:
                 pass
         else:
@@ -1217,7 +1218,7 @@ def tixcraft_date_auto_select(driver, url, config_dict, domain_name):
                     if len(formated_area_list) == 0:
                         print('start to refresh page.')
                         try:
-                            driver.refresh()
+                            guarded_tixcraft_refresh(driver, "empty date list")
                             time.sleep(0.3)
                         except Exception as exc:
                             pass
@@ -1616,7 +1617,7 @@ def tixcraft_area_auto_select(driver, url, config_dict):
         # auto refresh for area list page.
         if is_need_refresh:
             try:
-                driver.refresh()
+                guarded_tixcraft_refresh(driver, "no matching tixcraft area")
             except Exception as exc:
                 pass
 
@@ -10884,6 +10885,34 @@ def pause_maxbot_for_rate_limit(driver, url):
         util.write_string_to_file(CONST_MAXBOT_INT28_FILE, "paused by rate limit guard")
         print("Detected possible Tixcraft rate limit page. MAXBOT Paused.")
     return is_rate_limited
+
+def guarded_tixcraft_refresh(driver, reason):
+    url = ""
+    try:
+        url = driver.current_url
+    except Exception:
+        pass
+
+    if not "tixcraft.com" in url:
+        driver.refresh()
+        return True
+
+    global tixcraft_last_refresh_time
+    if not "tixcraft_last_refresh_time" in globals():
+        tixcraft_last_refresh_time = 0
+
+    now = time.time()
+    elapsed = now - tixcraft_last_refresh_time
+    if elapsed < CONST_TIXCRAFT_MIN_REFRESH_INTERVAL:
+        util.write_string_to_file(CONST_MAXBOT_INT28_FILE, "paused by refresh guard")
+        print("Tixcraft refresh skipped and MAXBOT Paused.")
+        print("reason:", reason)
+        print("elapsed seconds since last refresh:", "{:.1f}".format(elapsed))
+        return False
+
+    tixcraft_last_refresh_time = now
+    driver.refresh()
+    return True
 
 def reset_webdriver(driver, config_dict, url):
     new_driver = None
