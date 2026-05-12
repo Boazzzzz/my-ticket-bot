@@ -27,7 +27,7 @@
     },
     "tixcraft": {
         "pass_date_is_sold_out": true,
-        "auto_reload_coming_soon_page": false
+        "auto_reload_coming_soon_page": true
     },
     "advanced": {
         "play_sound": {
@@ -76,7 +76,7 @@
         "auto_guess_options": true,
         "user_guess_string": "",
         "remote_url": "\"http://127.0.0.1:16888/\"",
-        "auto_reload_page_interval": 10.0,
+        "auto_reload_page_interval": 0.0,
         "reset_browser_interval": 0,
         "kktix_status_api": false,
         "max_dwell_time": 60,

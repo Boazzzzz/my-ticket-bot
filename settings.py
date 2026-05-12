@@ -615,7 +615,7 @@ def get_default_config():
 
     config_dict['tixcraft']={}
     config_dict["tixcraft"]["pass_date_is_sold_out"] = True
-    config_dict["tixcraft"]["auto_reload_coming_soon_page"] = False
+    config_dict["tixcraft"]["auto_reload_coming_soon_page"] = True
 
     config_dict['advanced']={}
 
@@ -670,7 +670,7 @@ def get_default_config():
     config_dict["advanced"]["user_guess_string"] = ""
     config_dict["advanced"]["remote_url"] = "http://127.0.0.1:%d/" % (CONST_SERVER_PORT)
 
-    config_dict["advanced"]["auto_reload_page_interval"] = 10
+    config_dict["advanced"]["auto_reload_page_interval"] = 0
     config_dict["advanced"]["reset_browser_interval"] = 0
     config_dict["advanced"]["kktix_status_api"] = False
     config_dict["advanced"]["max_dwell_time"] = 60
