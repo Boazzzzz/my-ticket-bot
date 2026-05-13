@@ -10936,6 +10936,21 @@ def pause_maxbot_for_rate_limit(driver, url):
         print("Detected possible Tixcraft rate limit page. MAXBOT Paused.")
     return is_rate_limited
 
+def clear_stale_rate_limit_pause():
+    if not os.path.exists(CONST_MAXBOT_INT28_FILE):
+        return
+
+    pause_reason = ""
+    try:
+        with open(CONST_MAXBOT_INT28_FILE, "r", encoding="UTF-8") as infile:
+            pause_reason = infile.read().strip()
+    except Exception as exc:
+        pass
+
+    if pause_reason == "paused by rate limit guard":
+        util.force_remove_file(CONST_MAXBOT_INT28_FILE)
+        print("Cleared stale Tixcraft rate limit pause. Re-checking current page.")
+
 def guarded_tixcraft_refresh(driver, reason):
     url = ""
     try:
@@ -10998,6 +11013,7 @@ def resize_window(driver, config_dict):
 
 def main(args):
     config_dict = get_config_dict(args)
+    clear_stale_rate_limit_pause()
 
     driver = None
     if not config_dict is None:
