@@ -91,6 +91,7 @@ CONST_MAXBLOCK_EXTENSION_FILTER =[
 CONST_CHROME_VERSION_NOT_MATCH_EN="Please download the WebDriver version to match your browser version."
 CONST_CHROME_VERSION_NOT_MATCH_TW="請下載與您瀏覽器相同版本的WebDriver版本，或更新您的瀏覽器版本。"
 CONST_CHROME_DRIVER_WEBSITE = 'https://chromedriver.chromium.org/'
+CONST_TIXCRAFT_RATE_LIMIT_GUARD_ENABLED = False
 CONST_TIXCRAFT_SAME_PAGE_REFRESH_LIMIT = 5
 CONST_TIXCRAFT_SAME_PAGE_REFRESH_PAUSE_SECONDS = 10
 
@@ -10916,6 +10917,9 @@ def is_tixcraft_rate_limited_page(page_text):
     return len(get_tixcraft_rate_limit_match(page_text)) > 0
 
 def pause_maxbot_for_rate_limit(driver, url):
+    if not CONST_TIXCRAFT_RATE_LIMIT_GUARD_ENABLED:
+        return False
+
     if not "tixcraft.com" in url:
         return False
 
@@ -11088,7 +11092,7 @@ def main(args):
             time.sleep(0.1)
             continue
 
-        if "tixcraft.com" in url:
+        if CONST_TIXCRAFT_RATE_LIMIT_GUARD_ENABLED and "tixcraft.com" in url:
             now = time.time()
             if now - maxbot_last_guard_check_time >= 5:
                 maxbot_last_guard_check_time = now
