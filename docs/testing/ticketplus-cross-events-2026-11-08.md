@@ -79,7 +79,8 @@ python tools/ticketplus_checkout_test.py --url https://ticketplus.com.tw/activit
 
 GUI 已有這些欄位，不需要另外新增介面；本次已開啟自動填表單頁供使用者自行輸入。
 GUI 啟動環境原缺 Tornado，已在本機 `.venv` 補齊，未啟動設定頁的網路伺服器。
-檢查時帳密尚未存入；未宣稱已保存或已驗證自動登入。
+使用者稍後已在 GUI 自行存檔；只檢查欄位是否有值，確認帳號與密碼都已保存至本機。
+未讀出或輸出帳密內容，尚未驗證使用這份設定自動登入。
 
 密碼目前使用固定 XOR 與 Base64 可逆編碼，並非安全密碼保管庫。
 `settings.json` 已被 Git 追蹤，需持續排除個人帳密變更，不能靠新增 ignore 規則保護
