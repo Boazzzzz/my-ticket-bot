@@ -54,7 +54,7 @@ class TicketSelectionTracker:
         return None
 
 
-def main():
+def main(on_selection=None, area_keyword=''):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--url', required=True)
     parser.add_argument('--login-wait-seconds', type=int, default=0)
@@ -80,7 +80,7 @@ def main():
     advanced['play_sound'].update(ticket=False, order=False)
     config['ocr_captcha'].update(enable=False, force_submit=False)
     config['date_auto_select'].update(enable=True, date_keyword='', mode='from top to bottom')
-    config['area_auto_select'].update(enable=True, area_keyword='', mode='from top to bottom')
+    config['area_auto_select'].update(enable=True, area_keyword=area_keyword, mode='from top to bottom')
     config['tixcraft']['auto_reload_coming_soon_page'] = False
     restricted = ','.join(json.dumps(word, ensure_ascii=False) for word in RESTRICTED_TICKET_WORDS)
     config['keyword_exclude'] = ','.join(filter(None, (config.get('keyword_exclude', ''), restricted)))
@@ -167,6 +167,8 @@ def main():
                                   selected_ticket=selection)
                     driver.execute_script('arguments[0].scrollIntoView({block: "center"});', tracker.target)
                     checkpoint('ticket-selection')
+                    if on_selection is not None:
+                        on_selection(driver, config, result, output)
                     break
                 time.sleep(2)
                 continue
