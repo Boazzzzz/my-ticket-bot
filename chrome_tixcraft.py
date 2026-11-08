@@ -114,6 +114,10 @@ CONST_OCR_CAPTCH_IMAGE_SOURCE_NON_BROWSER = "NonBrowser"
 CONST_OCR_CAPTCH_IMAGE_SOURCE_CANVAS = "canvas"
 
 CONST_TICKETPLUS_DATE_ROW_SELECTOR = 'div#buyTicket div.sesstion-item > div.row'
+CONST_TICKETPLUS_NEXT_BUTTON_SELECTORS = (
+    (2, 'div.order-footer > div.container > div.row > div > button.nextBtn'),
+    (1, 'div.order-footer > div.container > div.row > div > div.row > div > button.nextBtn'),
+)
 
 CONST_WEBDRIVER_TYPE_SELENIUM = "selenium"
 CONST_WEBDRIVER_TYPE_UC = "undetected_chromedriver"
@@ -10096,72 +10100,96 @@ location.reload();
 
     return is_reloading
 
-def ticketplus_order(driver, config_dict, ocr, Captcha_Browser, ticketplus_dict):
-    show_debug_message = True       # debug.
-    show_debug_message = False      # online
-
-    if config_dict["advanced"]["verbose"]:
-        show_debug_message = True
-
-    next_step_button = None
-    # PS: only button disabled = True to continue.
-    is_button_disabled = False
-    current_layout_style = 0
+def ticketplus_order_ticket_count_matches(driver, config_dict):
     try:
-        # for style_2
-        my_css_selector = "div.order-footer > div.container > div.row > div > button.nextBtn"
-        next_step_button = driver.find_element(By.CSS_SELECTOR, my_css_selector)
-        if not next_step_button is None:
-            if not next_step_button.is_enabled():
-                is_button_disabled = True
-                current_layout_style = 2
-    except Exception as exc:
-        if show_debug_message:
-            print("find next_step_button (style_2) fail")
-            #print(exc)
-            pass
+        expected = int(config_dict["ticket_number"])
+        counters = [element for element in driver.find_elements(By.CSS_SELECTOR, 'div.count-button > div')
+                    if element.is_displayed()]
+        counts = [int(element.text.strip()) for element in counters]
+        if expected <= 0 or not counters or min(counts) < 0 or sum(counts) != expected:
+            return False
+        area_keyword = config_dict.get("area_auto_select", {}).get("area_keyword", "").strip()
+        if area_keyword:
+            keywords = json.loads('[' + area_keyword + ']')
+            for counter, count in zip(counters, counts):
+                if count:
+                    row = counter.find_element(By.XPATH, 'ancestor::div['
+                        'contains(concat(" ", normalize-space(@class), " "), " text-title ") or '
+                        'contains(concat(" ", normalize-space(@class), " "), " v-expansion-panel ")][1]')
+                    text = util.format_keyword_string(row.text)
+                    if not any(isinstance(item, str) and all(
+                            util.format_keyword_string(word) in text for word in item.split(' '))
+                            for item in keywords):
+                        return False
+        return True
+    except (WebDriverException, ValueError, TypeError):
+        return False
 
-        # for style_1
+
+def ticketplus_order_has_captcha(driver):
+    try:
+        return any(element.is_displayed() for element in driver.find_elements(
+            By.CSS_SELECTOR, 'input[placeholder="請輸入驗證碼"], span.captcha-img'))
+    except WebDriverException:
+        # A failed query must not be treated as proof that CAPTCHA is absent.
+        return True
+
+
+def ticketplus_order(driver, config_dict, ocr, Captcha_Browser, ticketplus_dict):
+    next_step_button = None
+    current_layout_style = 0
+    for style, selector in CONST_TICKETPLUS_NEXT_BUTTON_SELECTORS:
         try:
-            my_css_selector = "div.order-footer > div.container > div.row > div > div.row > div > button.nextBtn"
-            next_step_button = driver.find_element(By.CSS_SELECTOR, my_css_selector)
-            if not next_step_button is None:
-                if not next_step_button.is_enabled():
-                    is_button_disabled = True
-                    current_layout_style = 1
-        except Exception as exc2:
-            if show_debug_message:
-                print("find next_step_button (style_1) fail")
-                #print(exc2)
-                pass
+            candidate = driver.find_element(By.CSS_SELECTOR, selector)
+            if candidate.is_displayed():
+                next_step_button = candidate
+                current_layout_style = style
+                break
+        except WebDriverException:
+            pass
+    if next_step_button is None:
+        return False, ticketplus_dict
 
-
-    #print("is_button_disabled:", is_button_disabled)
-    is_captcha_sent = False
-    if is_button_disabled:
-        is_price_assign_by_bot = False
+    is_price_assign_by_bot = False
+    if not next_step_button.is_enabled():
         is_price_assign_by_bot = ticketplus_order_expansion_panel(driver, config_dict, current_layout_style)
-
         # A failed filtered click must not fall back to the first ticket on the page.
         if not is_price_assign_by_bot and not config_dict["area_auto_select"]["area_keyword"].strip():
             is_price_assign_by_bot = ticketplus_assign_ticket_number(driver, config_dict)
 
-        is_question_popup = False
-        is_answer_sent = False
-        if is_price_assign_by_bot:
-            is_answer_sent, ticketplus_dict["fail_list"], is_question_popup = ticketplus_order_exclusive_code(driver, config_dict, ticketplus_dict["fail_list"])
+    count_matches = ticketplus_order_ticket_count_matches(driver, config_dict)
+    if not count_matches:
+        return False, ticketplus_dict
 
-        if is_price_assign_by_bot:
-            if config_dict["ocr_captcha"]["enable"]:
-                is_captcha_sent =  ticketplus_order_ocr(driver, config_dict, ocr, Captcha_Browser)
+    is_answer_sent, ticketplus_dict["fail_list"], is_question_popup = ticketplus_order_exclusive_code(
+        driver, config_dict, ticketplus_dict["fail_list"])
+    if is_question_popup and not is_answer_sent:
+        return False, ticketplus_dict
 
-                if is_captcha_sent:
-                    # after submit captcha, due to exclusive code not correct, should not auto press next button.
-                    if is_question_popup:
-                        if not is_answer_sent:
-                            is_captcha_sent = False
+    current_url = driver.current_url
+    if (ticketplus_dict.get("next_submit_url") == current_url
+            and time.monotonic() - ticketplus_dict.get("next_submit_at", 0) < 10):
+        return False, ticketplus_dict
 
-    return is_captcha_sent, ticketplus_dict
+    is_step_submitted = False
+    if ticketplus_order_has_captcha(driver):
+        # CAPTCHA submission retains the existing OCR/manual-mode behavior.
+        if config_dict["ocr_captcha"]["enable"]:
+            is_step_submitted = bool(ticketplus_order_ocr(driver, config_dict, ocr, Captcha_Browser))
+    elif config_dict["ocr_captcha"].get("force_submit", False) and count_matches:
+        try:
+            blocking_dialogs = driver.find_elements(By.CSS_SELECTOR, '.v-dialog--active, [role="dialog"][aria-modal="true"]')
+            if not any(dialog.is_displayed() for dialog in blocking_dialogs):
+                if next_step_button.is_enabled() and next_step_button.text.strip() == '下一步':
+                    next_step_button.click()
+                    is_step_submitted = True
+        except WebDriverException:
+            pass
+
+    if is_step_submitted:
+        ticketplus_dict["next_submit_url"] = current_url
+        ticketplus_dict["next_submit_at"] = time.monotonic()
+    return is_step_submitted, ticketplus_dict
 
 def ticketplus_order_ocr(driver, config_dict, ocr, Captcha_Browser):
     away_from_keyboard_enable = config_dict["ocr_captcha"]["force_submit"]
@@ -10203,6 +10231,8 @@ def ticketplus_order_ocr(driver, config_dict, ocr, Captcha_Browser):
         current_url, is_quit_bot = get_current_url(driver)
         if current_url != last_url:
             break
+
+    return is_captcha_sent
 
 def ticketplus_auto_ocr(driver, config_dict, ocr, previous_answer, Captcha_Browser):
     show_debug_message = True       # debug.
