@@ -15,7 +15,7 @@ from tools import ticketplus_checkout_test as checkout
 class CheckoutSafetyTests(unittest.TestCase):
     def run_command(self, command, path='/checkout/event/session',
                     body='夢境邊界 ATM 共 1 張\n總金額\nNT. 2,480', result=None,
-                    atm_selected=True, card_selected=False, title='付款結帳'):
+                    atm_selected=True, card_selected=False, title='付款結帳', approval=None):
         driver = Mock()
         driver.current_url = 'https://ticketplus.com.tw' + path
         driver.find_element.return_value = SimpleNamespace(text=body)
@@ -36,7 +36,7 @@ class CheckoutSafetyTests(unittest.TestCase):
                     patch.object(checkout, 'exact_button', return_value=button), \
                     patch.object(checkout.time, 'sleep'), \
                     patch.object(checkout.time, 'monotonic', side_effect=[0, 0, 1801]):
-                checkout.paused_checkout(driver, {}, result, output)
+                checkout.paused_checkout(driver, {}, result, output, approval=approval)
         return result, button
 
     def order_command(self, **changes):
@@ -117,11 +117,34 @@ class CheckoutSafetyTests(unittest.TestCase):
         result, button = self.run_command(
             dict(action='record_unpaid_order'),
             title='訂單成立 | Ticket Plus遠大售票系統',
-            body='您的訂單已成立！請在期限前完成繳款程序\nATM 虛擬帳號\n付款金額 NT.2,480',
+            body='您的訂單已成立！請在期限前完成繳款程序\n夢境邊界 ATM 虛擬帳號\n付款金額 NT.2,480',
             result={'order_submission_attempted': True})
         self.assertTrue(result['unpaid_order_created'])
         self.assertTrue(result['order_submitted'])
         self.assertFalse(result['payment_submitted'])
+        button.click.assert_not_called()
+
+    def test_another_explicit_ticket_profile_is_supported(self):
+        result, button = self.run_command(
+            self.order_command(approved_total=1800),
+            approval={'price': 1800, 'label': 'GA'},
+            body='GA ATM 共 1 張\n總金額\nNT. 1,800',
+            result={'selected_ticket': {'ticket_type': '一般票 NT.1,800\n1', 'quantity': 1}})
+        self.assertNotIn('action_error', result)
+        button.click.assert_called_once()
+        self.assertFalse(result['unpaid_order_created'])
+
+    def test_different_activity_is_rejected(self):
+        result, button = self.run_command(
+            self.order_command(),
+            result={'activity_url': 'https://ticketplus.com.tw/activity/approved-event'})
+        self.assertIn('different activity', result['action_error'])
+        button.click.assert_not_called()
+
+    def test_changed_ticket_label_is_rejected(self):
+        result, button = self.run_command(self.order_command(),
+                                          body='另一票區 ATM 共 1 張\n總金額\nNT. 2,480')
+        self.assertIn('Review the current payment', result['action_error'])
         button.click.assert_not_called()
 
 

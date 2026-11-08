@@ -54,11 +54,12 @@ class TicketSelectionTracker:
         return None
 
 
-def main(on_selection=None, area_keyword=''):
+def main(on_selection=None, area_keyword='', argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--url', required=True)
     parser.add_argument('--login-wait-seconds', type=int, default=0)
-    args = parser.parse_args()
+    parser.add_argument('--date-keyword', default='')
+    args = parser.parse_args(argv)
     parsed = urlsplit(args.url)
     if (parsed.scheme != 'https' or parsed.netloc != 'ticketplus.com.tw'
             or not parsed.path.startswith('/activity/') or parsed.query or parsed.fragment):
@@ -79,7 +80,9 @@ def main(on_selection=None, area_keyword=''):
                     proxy_server_port='', auto_reload_page_interval=5)
     advanced['play_sound'].update(ticket=False, order=False)
     config['ocr_captcha'].update(enable=False, force_submit=False)
-    config['date_auto_select'].update(enable=True, date_keyword='', mode='from top to bottom')
+    config['date_auto_select'].update(enable=True,
+                                    date_keyword=json.dumps(args.date_keyword, ensure_ascii=False) if args.date_keyword else '',
+                                    mode='from top to bottom')
     config['area_auto_select'].update(enable=True, area_keyword=area_keyword, mode='from top to bottom')
     config['tixcraft']['auto_reload_coming_soon_page'] = False
     restricted = ','.join(json.dumps(word, ensure_ascii=False) for word in RESTRICTED_TICKET_WORDS)

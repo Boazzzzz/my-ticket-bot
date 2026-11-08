@@ -10142,7 +10142,8 @@ def ticketplus_order(driver, config_dict, ocr, Captcha_Browser, ticketplus_dict)
         is_price_assign_by_bot = False
         is_price_assign_by_bot = ticketplus_order_expansion_panel(driver, config_dict, current_layout_style)
 
-        if not is_price_assign_by_bot:
+        # A failed filtered click must not fall back to the first ticket on the page.
+        if not is_price_assign_by_bot and not config_dict["area_auto_select"]["area_keyword"].strip():
             is_price_assign_by_bot = ticketplus_assign_ticket_number(driver, config_dict)
 
         is_question_popup = False

@@ -148,6 +148,25 @@ class TicketPlusDOMTests(unittest.TestCase):
         self.load_quantity_page()
         self.assertIsNone(tracker.snapshot())
 
+    def test_failed_filtered_selection_does_not_choose_first_page_ticket(self):
+        self.load_quantity_page()
+        self.config.update(area_auto_select={'area_keyword': '"1800"'}, ocr_captcha={'enable': False})
+        self.load('<div class="order-footer"><div class="container"><div class="row"><div>'
+                  '<button class="nextBtn" disabled>下一步</button></div></div></div></div>')
+        with patch.object(bot, 'ticketplus_order_expansion_panel', return_value=False), \
+                patch.object(bot, 'ticketplus_assign_ticket_number') as fallback:
+            bot.ticketplus_order(self.driver, self.config, None, None, {'fail_list': []})
+        fallback.assert_not_called()
+
+    def test_empty_keyword_retains_existing_fallback(self):
+        self.config.update(area_auto_select={'area_keyword': ''}, ocr_captcha={'enable': False})
+        self.load('<div class="order-footer"><div class="container"><div class="row"><div>'
+                  '<button class="nextBtn" disabled>下一步</button></div></div></div></div>')
+        with patch.object(bot, 'ticketplus_order_expansion_panel', return_value=False), \
+                patch.object(bot, 'ticketplus_assign_ticket_number', return_value=False) as fallback:
+            bot.ticketplus_order(self.driver, self.config, None, None, {'fail_list': []})
+        fallback.assert_called_once_with(self.driver, self.config)
+
 
 if __name__ == '__main__':
     unittest.main()
