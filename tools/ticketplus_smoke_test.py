@@ -21,6 +21,39 @@ sys.path.insert(0, str(ROOT))
 import chrome_tixcraft as bot
 
 
+RESTRICTED_TICKET_WORDS = ('身障', '愛心', '陪同', '會員限定', '序號', '優先購')
+
+
+class TicketSelectionTracker:
+    """Observe the specific ticket container operated on by the production helper."""
+
+    def __init__(self, driver, assign):
+        self.driver = driver
+        self.assign = assign
+        self.target = None
+
+    def __call__(self, target, config):
+        assigned = self.assign(target, config)
+        # A page-wide fallback cannot identify which ticket type was chosen.
+        if assigned and target is not self.driver:
+            self.target = target
+        return assigned
+
+    def snapshot(self):
+        if self.target is None:
+            return None
+        try:
+            counter = self.target.find_element(bot.By.CSS_SELECTOR, 'div.count-button > div')
+            label = self.target.text.strip()
+            if (counter.is_displayed() and counter.text.strip() == '1' and label
+                    and not any(word in label for word in RESTRICTED_TICKET_WORDS)):
+                return {'ticket_type': label, 'quantity': 1}
+        except bot.WebDriverException:
+            # Vue may replace the row while rendering; let the caller retry.
+            pass
+        return None
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--url', required=True)
@@ -49,6 +82,8 @@ def main():
     config['date_auto_select'].update(enable=True, date_keyword='', mode='from top to bottom')
     config['area_auto_select'].update(enable=True, area_keyword='', mode='from top to bottom')
     config['tixcraft']['auto_reload_coming_soon_page'] = False
+    restricted = ','.join(json.dumps(word, ensure_ascii=False) for word in RESTRICTED_TICKET_WORDS)
+    config['keyword_exclude'] = ','.join(filter(None, (config.get('keyword_exclude', ''), restricted)))
 
     original_options = bot.get_chrome_options
 
@@ -72,8 +107,10 @@ def main():
     driver = bot.get_driver_by_config(config)
     if driver is None:
         raise RuntimeError('Could not start the project browser')
+    tracker = TicketSelectionTracker(driver, bot.ticketplus_assign_ticket_number)
+    bot.ticketplus_assign_ticket_number = tracker
     result = {'activity_url': args.url, 'status': 'not_completed', 'date_selected': False,
-              'ticket_number_assigned': False, 'captcha_tested': False,
+              'order_page_reached': False, 'ticket_number_assigned': False, 'captcha_tested': False,
               'order_submitted': False}
 
     def checkpoint(name):
@@ -94,6 +131,7 @@ def main():
                 print('PAGE', url.split('?')[0], flush=True)
                 last_url = url
                 last_action = 0
+                stage_deadline = time.monotonic() + 120
             if '/confirm/' in url or '/confirmseat/' in url:
                 raise RuntimeError('Unexpected confirmation page; stopping')
             password_fields = driver.find_elements(bot.By.CSS_SELECTOR, 'input[type="password"]')
@@ -116,20 +154,27 @@ def main():
                 stage_deadline = time.monotonic() + 120
                 last_action = 0
             if '/order/' in url:
-                result['status'] = 'order_page_reached'
+                if not result['order_page_reached']:
+                    result.update(status='order_page_reached', order_page_reached=True)
+                    checkpoint('order-page')
                 state = {'fail_list': [], 'is_popup_confirm': False}
                 bot.ticketplus_order(driver, config, None, None, state)
-                counts = [element.text for element in driver.find_elements(bot.By.CSS_SELECTOR, 'div.count-button > div')]
-                result['ticket_counts'] = counts
-                result['ticket_number_assigned'] = '1' in counts
-                result['status'] = 'quantity_selected' if result['ticket_number_assigned'] else 'quantity_selection_failed'
-                checkpoint('ticket-selection')
-                break
+                selection = tracker.snapshot()
+                if selection is not None:
+                    if driver.current_url != url:
+                        raise RuntimeError('Page changed during ticket selection; stopping')
+                    result.update(status='quantity_selected', ticket_number_assigned=True,
+                                  selected_ticket=selection)
+                    driver.execute_script('arguments[0].scrollIntoView({block: "center"});', tracker.target)
+                    checkpoint('ticket-selection')
+                    break
+                time.sleep(2)
+                continue
             if time.monotonic() - last_action >= 10 and '/activity/' in url:
                 selected = bot.ticketplus_date_auto_select(driver, config)
                 result['date_selected'] = result['date_selected'] or selected
                 date_attempts += 1
-                result['date_selector_count'] = len(driver.find_elements(bot.By.CSS_SELECTOR, 'div#buyTicket > div.sesstion-item > div.row'))
+                result['date_selector_count'] = len(driver.find_elements(bot.By.CSS_SELECTOR, bot.CONST_TICKETPLUS_DATE_ROW_SELECTOR))
                 if date_attempts == 1:
                     checkpoint('activity-page')
                 if date_attempts >= 3 and not result['date_selector_count']:
@@ -139,7 +184,12 @@ def main():
                 last_action = time.monotonic()
             time.sleep(2)
         else:
-            result['status'] = 'login_wait_expired' if login_deadline is not None else 'timeout'
+            if login_deadline is not None:
+                result['status'] = 'login_wait_expired'
+            elif result['order_page_reached']:
+                result['status'] = 'quantity_selection_failed'
+            else:
+                result['status'] = 'timeout'
             checkpoint('timeout')
     except Exception as exc:
         result.update(status='error', error_type=type(exc).__name__)

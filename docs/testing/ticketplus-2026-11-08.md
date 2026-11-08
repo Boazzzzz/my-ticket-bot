@@ -2,7 +2,9 @@
 
 ## 結論
 
-目前 Selenium 版本的遠大自動選場失敗，尚不能認定完整購票流程正常。
+Selenium 版本原本的自動選場失敗已修正。修正後實測能找到場次、按下
+「立即購買」並顯示會員登入畫面。目前等待使用者手動登入，尚未完成
+「進入選票頁並填入一般票一張」的實測驗收，不能認定完整購票流程正常。
 nodriver 版本的遠大選場、選票及驗證碼流程仍有 TODO，不能當作已完成的替代方案。
 
 ## 測試環境與範圍
@@ -31,7 +33,20 @@ div#buyTicket div.sesstion-item > div.row
 ```
 
 實際執行舊選場函式，連續三次皆未找到場次，測試以
-`activity_selectors_not_found` 結束。這次只記錄測試及原因，未修改正式購票邏輯。
+`activity_selectors_not_found` 結束。
+
+## 修正與回歸結果
+
+- 正式程式與測試腳本共用 `CONST_TICKETPLUS_DATE_ROW_SELECTOR`，使用上列相容選取器。
+- 初始化場次計數，元素查詢發生例外時不再使用未定義變數；既有篩選與排序不變。
+- 本機 Chrome 載入離線 HTML 的 13 項回歸測試全部通過，涵蓋新舊結構、多場次、
+  日期與排除關鍵字、排序、售完與停用按鈕、空列表、查詢例外及張數驗收。
+- 測試腳本等待選票頁就緒，最多重試 120 秒；成功必須確認原程式實際操作的
+  一般票種容器內張數為 1，不接受其他票種的數字 1 或全頁查詢的模糊結果。
+- VERA 活動修正後實測：`date_selector_count=1`、`date_selected=true`，
+  進度為 `needs_manual_login`；`order_page_reached=false`、
+  `ticket_number_assigned=false`、`order_submitted=false`。
+- 正式購票函式介面與設定檔格式不變；本輪未修改 nodriver 或其他平台。
 
 ## 尚未驗證
 
@@ -41,6 +56,12 @@ div#buyTicket div.sesstion-item > div.row
 - 訂單、座位保留及付款流程。
 
 ## 在其他主機重跑
+
+離線回歸測試（測試資料皆為本機 HTML，不會連線售票服務）：
+
+```sh
+python -m unittest discover -s tests -v
+```
 
 先同步任務分支並準備專案 Python 依賴，選擇當下仍可購票的公開活動頁：
 

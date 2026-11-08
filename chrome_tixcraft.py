@@ -113,6 +113,8 @@ CONT_STRING_1_SEATS_REMAINING = ['@1 seat(s) remaining','剩餘 1@','@1 席残�
 CONST_OCR_CAPTCH_IMAGE_SOURCE_NON_BROWSER = "NonBrowser"
 CONST_OCR_CAPTCH_IMAGE_SOURCE_CANVAS = "canvas"
 
+CONST_TICKETPLUS_DATE_ROW_SELECTOR = 'div#buyTicket div.sesstion-item > div.row'
+
 CONST_WEBDRIVER_TYPE_SELENIUM = "selenium"
 CONST_WEBDRIVER_TYPE_UC = "undetected_chromedriver"
 CONST_WEBDRIVER_TYPE_DP = "DrissionPage"
@@ -9463,8 +9465,9 @@ def ticketplus_date_auto_select(driver, config_dict):
         print("date_keyword:", date_keyword)
 
     area_list = None
+    area_list_count = 0
     try:
-        area_list = driver.find_elements(By.CSS_SELECTOR, 'div#buyTicket > div.sesstion-item > div.row')
+        area_list = driver.find_elements(By.CSS_SELECTOR, CONST_TICKETPLUS_DATE_ROW_SELECTOR)
         if not area_list is None:
             area_list_count = len(area_list)
             if area_list_count == 0:
