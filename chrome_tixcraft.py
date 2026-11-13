@@ -10135,6 +10135,24 @@ def ticketplus_order_has_captcha(driver):
         return True
 
 
+def ticketplus_order_has_blocking_dialog(driver):
+    try:
+        dialogs = driver.find_elements(
+            By.CSS_SELECTOR, '.v-dialog--active, [role="dialog"][aria-modal="true"]')
+        for dialog in dialogs:
+            if not dialog.is_displayed():
+                continue
+            if 'v-dialog__content' in (dialog.get_attribute('class') or '').split():
+                # Vuetify keeps the modal wrapper visible after hiding its panel.
+                panels = dialog.find_elements(By.CSS_SELECTOR, '.v-dialog')
+                if panels and not any(panel.is_displayed() for panel in panels):
+                    continue
+            return True
+        return False
+    except WebDriverException:
+        return True
+
+
 def ticketplus_order(driver, config_dict, ocr, Captcha_Browser, ticketplus_dict):
     next_step_button = None
     current_layout_style = 0
@@ -10178,8 +10196,7 @@ def ticketplus_order(driver, config_dict, ocr, Captcha_Browser, ticketplus_dict)
             is_step_submitted = bool(ticketplus_order_ocr(driver, config_dict, ocr, Captcha_Browser))
     elif config_dict["ocr_captcha"].get("force_submit", False) and count_matches:
         try:
-            blocking_dialogs = driver.find_elements(By.CSS_SELECTOR, '.v-dialog--active, [role="dialog"][aria-modal="true"]')
-            if not any(dialog.is_displayed() for dialog in blocking_dialogs):
+            if not ticketplus_order_has_blocking_dialog(driver):
                 if next_step_button.is_enabled() and next_step_button.text.strip() == '下一步':
                     next_step_button.click()
                     is_step_submitted = True

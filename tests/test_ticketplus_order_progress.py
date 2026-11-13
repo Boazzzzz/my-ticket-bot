@@ -126,6 +126,49 @@ class TicketPlusOrderProgressTests(unittest.TestCase):
         self.assertFalse(self.run_order())
         self.assertEqual(self.next_clicks(), 0)
 
+    def test_visible_vuetify_wrapper_with_closed_login_panel_does_not_block(self):
+        self.load(extra='<div role="dialog" aria-modal="true" class="v-dialog__content" '
+                        'style="position:fixed;inset:0;pointer-events:none">'
+                        '<div class="v-dialog height90 v-dialog--fullscreen" style="display:none">'
+                        '<input type="password"></div></div>')
+        wrapper = self.driver.find_element('css selector', '.v-dialog__content')
+        self.assertTrue(wrapper.is_displayed())
+        self.assertFalse(wrapper.find_element('css selector', '.v-dialog').is_displayed())
+        self.assertTrue(self.run_order())
+        self.assertEqual(self.next_clicks(), 1)
+
+    def test_visible_empty_vuetify_panel_still_blocks(self):
+        self.load(extra='<div role="dialog" aria-modal="true" class="v-dialog__content">'
+                        '<div class="v-dialog" style="width:100px;height:100px"></div></div>')
+        self.assertFalse(self.run_order())
+        self.assertEqual(self.next_clicks(), 0)
+
+    def test_closed_login_panel_does_not_hide_another_active_dialog(self):
+        self.load(extra='<div role="dialog" aria-modal="true" class="v-dialog__content">'
+                        '<div class="v-dialog" style="display:none"></div></div>'
+                        '<div class="v-dialog--active">請確認票種</div>')
+        self.assertFalse(self.run_order())
+        self.assertEqual(self.next_clicks(), 0)
+
+    def test_generic_modal_still_blocks_without_vuetify_panel(self):
+        self.load(extra='<div role="dialog" aria-modal="true" '
+                        'style="width:100px;height:100px"></div>')
+        self.assertFalse(self.run_order())
+        self.assertEqual(self.next_clicks(), 0)
+
+    def test_dialog_lookup_failure_blocks_progress(self):
+        self.load()
+        find_elements = self.driver.find_elements
+
+        def fail_dialog_lookup(by, selector):
+            if selector == '.v-dialog--active, [role="dialog"][aria-modal="true"]':
+                raise bot.WebDriverException('dialog lookup failed')
+            return find_elements(by, selector)
+
+        with patch.object(self.driver, 'find_elements', side_effect=fail_dialog_lookup):
+            self.assertFalse(self.run_order())
+        self.assertEqual(self.next_clicks(), 0)
+
     def test_pending_navigation_is_not_clicked_twice(self):
         self.load()
         self.assertTrue(self.run_order())
