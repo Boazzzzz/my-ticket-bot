@@ -19,6 +19,7 @@ import time
 import warnings
 import webbrowser
 from datetime import datetime
+from urllib.parse import urlsplit
 
 import chromedriver_autoinstaller_max
 import requests
@@ -10733,10 +10734,53 @@ def ticketplus_ticket_agree(driver, config_dict):
 
     is_finish_checkbox_click = force_check_checkbox(driver, agree_checkbox)
 
-    return is_finish_checkbox_click
+    try:
+        return is_finish_checkbox_click and agree_checkbox.is_selected()
+    except WebDriverException:
+        return False
 
-def ticketplus_confirm(driver, config_dict):
-    is_checkbox_checked = ticketplus_ticket_agree(driver, config_dict)
+def ticketplus_confirm(driver, config_dict, state=None):
+    try:
+        current_url = driver.current_url
+        parsed = urlsplit(current_url)
+        parts = parsed.path.strip('/').split('/')
+        if (parsed.scheme != 'https' or parsed.netloc != 'ticketplus.com.tw'
+                or len(parts) != 3 or parts[0].lower() not in ('confirmseat', 'confirm')):
+            return False
+        if ticketplus_order_has_blocking_dialog(driver) or ticketplus_order_has_captcha(driver):
+            return False
+
+        if parts[0].lower() == 'confirm' and not ticketplus_ticket_agree(driver, config_dict):
+            return False
+        if not config_dict.get('ocr_captcha', {}).get('force_submit', False):
+            return False
+
+        if state is None:
+            state = globals().setdefault('ticketplus_dict', {})
+        if (state.get('confirm_submit_url') == current_url
+                and time.monotonic() - state.get('confirm_submit_at', 0) < 10):
+            return False
+
+        buttons = [button for button in driver.find_elements(By.CSS_SELECTOR, 'button.nextBtn')
+                   if button.is_displayed() and button.text.strip() == '下一步']
+        if len(buttons) != 1 or not buttons[0].is_enabled():
+            return False
+        invalid_fields = driver.find_elements(By.CSS_SELECTOR,
+            'input:invalid, textarea:invalid, select:invalid, '
+            'input[aria-invalid="true"], textarea[aria-invalid="true"], select[aria-invalid="true"], '
+            '.v-input.error--text .v-messages__message')
+        if any(field.is_displayed() for field in invalid_fields):
+            return False
+        if driver.current_url != current_url:
+            return False
+
+        driver.execute_script('arguments[0].scrollIntoView({block: "center"});', buttons[0])
+        buttons[0].click()
+        state['confirm_submit_url'] = current_url
+        state['confirm_submit_at'] = time.monotonic()
+        return True
+    except (WebDriverException, ValueError):
+        return False
 
 def ticketplus_main(driver, url, config_dict, ocr, Captcha_Browser):
     global ticketplus_dict
@@ -10821,7 +10865,7 @@ def ticketplus_main(driver, url, config_dict, ocr, Captcha_Browser):
             if not ticketplus_dict["is_popup_confirm"]:
                 ticketplus_dict["is_popup_confirm"] = True
                 play_sound_while_ordering(config_dict)
-            ticketplus_confirm(driver, config_dict)
+            ticketplus_confirm(driver, config_dict, ticketplus_dict)
         else:
             ticketplus_dict["is_popup_confirm"] = False
     else:
