@@ -9,3 +9,65 @@
 - 只提交本次任務的變更；`settings.json` 等使用者原有的未提交設定應保留，避免混入其他任務或上傳帳密、Cookie、登入憑證。
 - 遇到衝突或遠端更新時，保留雙方工作並處理同步問題；不要 force-push、重設或覆寫其他主機的提交。
 - 回報完成時說明分支、commit 與 push 結果。若無法 push，清楚說明原因與尚未同步的內容。
+
+## Windows CMD：首次安裝與啟動
+
+以下適用於乾淨的 Windows 10／11 環境，將最新版 `main` 的 ZIP 解壓縮至
+`D:\my-ticket-bot` 後，使用 **Windows 命令提示字元（CMD）** 執行。
+使用 ZIP 不需要安裝 Git、VS Code 或 PowerShell。
+
+### 1. 準備 Python 與 Chrome
+
+- 安裝 **Python 3.12 64 位元**；例如使用官方 Python 3.12.10 Windows installer（64-bit）。
+  安裝時勾選 `Add python.exe to PATH`，保留 pip、Tcl/Tk 與 Python Launcher。
+- 安裝 Google Chrome。
+- 安裝完成後重新開啟 CMD，讓新的環境變數生效。
+- 確認 `D:\my-ticket-bot` 下直接有 `settings.py`、`chrome_tixcraft.py` 與
+  `pip-req.txt`，而不是多包一層 `my-ticket-bot-main` 資料夾。
+- 首次安裝套件與取得驅動需要網路連線。
+
+### 2. 建立 Python 環境並安裝套件
+
+逐行執行：
+
+```cmd
+cd /d D:\my-ticket-bot
+py -3.12 -m venv .venv
+.venv\Scripts\python.exe -m pip install --upgrade pip setuptools wheel
+.venv\Scripts\python.exe -m pip install -r pip-req.txt requests
+```
+
+`cd /d` 會同時切換磁碟與資料夾。後續直接指定 `.venv` 的 Python，
+不需要另外啟用虛擬環境，也不要使用其他主機複製來的 `.venv`。
+
+### 3. 首次準備 ChromeDriver
+
+目前專案啟動器仍保留舊的驅動下載邏輯，乾淨環境可能因此啟動中斷。
+先使用 Selenium Manager 取得相容驅動，再複製到專案使用的
+`webdriver\chromedriver.exe`。以下整段是一行，直接貼到 CMD 執行：
+
+```cmd
+.venv\Scripts\python.exe -c "from pathlib import Path; from shutil import copy2; from selenium import webdriver; d=webdriver.Chrome(); p=d.service.path; d.quit(); Path('webdriver').mkdir(exist_ok=True); copy2(p,'webdriver/chromedriver.exe'); print('ChromeDriver ready')"
+```
+
+Chrome 會短暫開啟後關閉，顯示 `ChromeDriver ready` 代表完成。
+若 Chrome 更新後出現驅動版本不相容，先停止機器人，再重新執行這個步驟。
+
+### 4. 開啟設定介面
+
+```cmd
+.venv\Scripts\python.exe settings.py
+```
+
+設定購票網址、票數與票區；瀏覽器選 `Chrome`，引擎選 `Selenium`。
+需要自動按下一步時啟用「掛機模式」，按「存檔」後再按「執行」。
+目前遠大自動流程會到「付款結帳」頁停止，不會自動按「前往付款」。
+
+### 日後啟動
+
+第一次安裝完成後，每次只需要：
+
+```cmd
+cd /d D:\my-ticket-bot
+.venv\Scripts\python.exe settings.py
+```
