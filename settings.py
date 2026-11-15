@@ -13,6 +13,7 @@ import base64
 import json
 import os
 import platform
+import queue
 import ssl
 import subprocess
 import sys
@@ -98,6 +99,9 @@ URL_FIREFOX_DRIVER = 'https://github.com/mozilla/geckodriver/releases'
 URL_EDGE_DRIVER = 'https://developer.microsoft.com/zh-tw/microsoft-edge/tools/webdriver/'
 
 GLOBAL_SERVER_SHUTDOWN = False
+bot_launch_events = queue.Queue()
+bot_launch_pending = False
+bot_launch_id = 0
 
 def load_translate():
     translate = {}
@@ -1109,13 +1113,52 @@ def btn_save_act(slience_mode=False):
     return is_all_data_correct
 
 
+def poll_bot_launch_events():
+    global bot_launch_pending
+    try:
+        while True:
+            event = bot_launch_events.get_nowait()
+            if event.get('launch_id') != bot_launch_id:
+                continue
+            status = event['status']
+            messages = {
+                'starting': '正在啟動瀏覽器，請稍候…',
+                'ready': '瀏覽器已啟動。',
+                'started': '機器人程序已啟動。',
+                'stopped': '機器人已停止。',
+                'error': '啟動或執行失敗，請查看日誌。',
+            }
+            text = messages.get(status, status)
+            if event.get('log_path'):
+                text += '\n' + event['log_path']
+            bot_launch_status.set(text)
+            if status != 'starting':
+                bot_launch_pending = False
+                btn_run.config(state='normal')
+    except queue.Empty:
+        pass
+    root.after(100, poll_bot_launch_events)
+
+
 def btn_run_clicked():
-    print('run button pressed.')
-    Root_Dir = ""
-    save_ret = btn_save_act(slience_mode=True)
-    print("save config result:", save_ret)
-    if save_ret:
+    global bot_launch_pending, bot_launch_id
+    if bot_launch_pending:
+        return
+    try:
+        save_ret = btn_save_act(slience_mode=True)
+        if not save_ret:
+            bot_launch_status.set('設定未通過檢查，請修正後再執行。')
+            return
+        bot_launch_pending = True
+        bot_launch_id += 1
+        btn_run.config(state='disabled')
+        bot_launch_status.set('正在啟動瀏覽器，請稍候…')
         launch_maxbot()
+    except (ValueError, OSError):
+        bot_launch_pending = False
+        btn_run.config(state='normal')
+        bot_launch_status.set('無法啟動，請檢查數字欄位與設定檔寫入權限。')
+
 
 def launch_maxbot():
     global launch_counter
@@ -1146,7 +1189,11 @@ def launch_maxbot():
             window_size = window_size + "," + str(launch_counter)
             #print("window_size:", window_size)
 
-    threading.Thread(target=util.launch_maxbot, args=(script_name,"","","","",window_size,)).start()
+    launch_id = bot_launch_id
+    def report_status(event):
+        bot_launch_events.put(dict(event, launch_id=launch_id))
+    threading.Thread(target=util.launch_maxbot, args=(script_name,"","","","",window_size,),
+                     kwargs={"on_status": report_status}).start()
 
 def show_preview_text():
     if os.path.exists(CONST_MAXBOT_ANSWER_ONLINE_FILE):
@@ -3037,6 +3084,11 @@ def get_action_bar(root, language_code):
     btn_run = ttk.Button(frame_action, text=translate[language_code]['run'], command=btn_run_clicked)
     btn_run.grid(column=0, row=0)
 
+    global bot_launch_status
+    bot_launch_status = StringVar(root, value="")
+    Label(frame_action, textvariable=bot_launch_status, wraplength=540, justify=LEFT).grid(
+        column=0, row=1, columnspan=4, sticky=W)
+
     btn_save = ttk.Button(frame_action, text=translate[language_code]['save'], command=btn_save_clicked)
     btn_save.grid(column=1, row=0)
 
@@ -3126,7 +3178,7 @@ def main_gui():
     load_GUI(root, config_dict)
 
     GUI_SIZE_WIDTH = 590
-    GUI_SIZE_HEIGHT = 645
+    GUI_SIZE_HEIGHT = 705
 
     GUI_SIZE_MACOS = str(GUI_SIZE_WIDTH) + 'x' + str(GUI_SIZE_HEIGHT)
     GUI_SIZE_WINDOWS=str(GUI_SIZE_WIDTH-70) + 'x' + str(GUI_SIZE_HEIGHT-80)
@@ -3161,6 +3213,7 @@ def main_gui():
         root.call('wm', 'iconphoto', root._w, logo)
     os.remove(icon_filepath)
 
+    root.after(100, poll_bot_launch_events)
     root.mainloop()
     GLOBAL_SERVER_SHUTDOWN=True
     clean_extension_status()

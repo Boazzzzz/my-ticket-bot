@@ -9,6 +9,7 @@ import socket
 import subprocess
 import sys
 import threading
+import tempfile
 from typing import Optional
 
 import requests
@@ -1941,51 +1942,97 @@ def get_kktix_status_by_url(url):
             #print(registerStatus)
     return registerStatus
 
-def launch_maxbot(script_name="chrome_tixcraft", filename="", homepage="", kktix_account = "", kktix_password="", window_size="", headless=""):
-    cmd_argument = []
-    if len(filename) > 0:
-        cmd_argument.append('--input=' + filename)
-    if len(homepage) > 0:
-        cmd_argument.append('--homepage=' + homepage)
-    if len(kktix_account) > 0:
-        cmd_argument.append('--kktix_account=' + kktix_account)
-    if len(kktix_password) > 0:
-        cmd_argument.append('--kktix_password=' + kktix_password)
-    if len(window_size) > 0:
-        cmd_argument.append('--window_size=' + window_size)
-    if len(headless) > 0:
-        cmd_argument.append('--headless=' + headless)
+BOT_STATUS_PREFIX = "MAXBOT_STATUS:"
 
+
+def report_bot_status(status):
+    print(BOT_STATUS_PREFIX + status, flush=True)
+
+
+def _launch_redactions(filename, working_dir, extra):
+    secrets = {value for value in extra if value}
+    def collect(value, sensitive=False):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                collect(item, sensitive or any(word in key.lower() for word in (
+                    'password', 'account', 'cookie', 'token', 'sid', 'ibonqware')))
+        elif isinstance(value, list):
+            for item in value:
+                collect(item, sensitive)
+        elif sensitive and isinstance(value, str) and value:
+            secrets.add(value)
+    try:
+        path = pathlib.Path(filename or "settings.json")
+        if not path.is_absolute():
+            path = pathlib.Path(working_dir) / path
+        collect(json.loads(path.read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        pass
+    return sorted(secrets, key=len, reverse=True)
+
+
+def _redact_launch_line(line, secrets):
+    if re.search(r"[\"'][^\"']*(?:password|account|cookie|token|sid)[^\"']*[\"']\s*:", line, re.I):
+        return "[configuration details hidden]\n"
+    for value in secrets:
+        line = line.replace(value, "[hidden]")
+    return line
+
+
+def launch_maxbot(script_name="chrome_tixcraft", filename="", homepage="", kktix_account="", kktix_password="", window_size="", headless="", on_status=None):
+    arguments = []
+    for name, value in (("input", filename), ("homepage", homepage),
+                        ("kktix_account", kktix_account), ("kktix_password", kktix_password),
+                        ("window_size", window_size), ("headless", headless)):
+        if value:
+            arguments.append('--' + name + '=' + value)
     working_dir = os.path.dirname(os.path.realpath(__file__))
-    if hasattr(sys, 'frozen'):
-        print("execute in frozen mode")
-        # check platform here.
-        cmd = './' + script_name + ' '.join(cmd_argument)
-        if platform.system() == 'Darwin':
-            print("execute MacOS python script")
-        if platform.system() == 'Linux':
-            print("execute linux binary")
-        if platform.system() == 'Windows':
-            print("execute .exe binary.")
-            cmd = script_name + '.exe ' + ' '.join(cmd_argument)
-        subprocess.Popen(cmd, shell=True, cwd=working_dir)
+    frozen = hasattr(sys, 'frozen')
+    if frozen:
+        executable = os.path.join(working_dir, script_name + ('.exe' if platform.system() == 'Windows' else ''))
+        command = [executable] + arguments
     else:
-        interpreter_binary = sys.executable
-        interpreter_binary_alt = 'python'
-        if platform.system() != 'Windows':
-            interpreter_binary_alt = 'python3'
-        print("execute in shell mode.")
+        command = [sys.executable, script_name + '.py'] + arguments
+    env = os.environ.copy()
+    env.setdefault("SE_TIMEOUT", "10")
+    env["PYTHONUNBUFFERED"] = "1"
+    if on_status is None:
+        return subprocess.Popen(command, cwd=working_dir, env=env)
 
-        try:
-            print('try', interpreter_binary)
-            cmd_array = [interpreter_binary, script_name + '.py'] + cmd_argument
-            s=subprocess.Popen(cmd_array, cwd=working_dir)
-        except Exception as exc:
-            print('try', interpreter_binary_alt)
-            try:
-                cmd_array = [interpreter_binary_alt, script_name + '.py'] + cmd_argument
-                s=subprocess.Popen(cmd_array, cwd=working_dir)
-            except Exception as exc:
-                msg=str(exc)
-                print("exeption:", msg)
-                pass
+    # This worker reports through a queue; it never accesses Tk widgets directly.
+    log_path = ""
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', prefix='maxbot-', suffix='.log', delete=False) as log:
+            log_path = log.name
+            secrets = _launch_redactions(filename, working_dir, (kktix_account, kktix_password))
+            on_status({'status': 'starting', 'log_path': log_path})
+            process = subprocess.Popen(command, cwd=working_dir, env=env, stdout=subprocess.PIPE,
+                                       stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace')
+            ready = frozen or script_name != 'chrome_tixcraft'
+            failed = False
+            if ready:
+                on_status({'status': 'started', 'log_path': log_path})
+            for line in process.stdout:
+                if log.tell() > 5 * 1024 * 1024:
+                    log.seek(0)
+                    log.truncate()
+                    log.write("[older output discarded]\n")
+                log.write(_redact_launch_line(line, secrets))
+                log.flush()
+                marker = line.strip()
+                if marker == BOT_STATUS_PREFIX + 'ready':
+                    ready = True
+                    on_status({'status': 'ready', 'log_path': log_path})
+                elif marker == BOT_STATUS_PREFIX + 'error':
+                    failed = True
+            process.stdout.close()
+            returncode = process.wait()
+            status = 'stopped' if ready and returncode == 0 and not failed else 'error'
+            on_status({'status': status, 'returncode': returncode, 'log_path': log_path})
+            return process
+    except OSError as exc:
+        if log_path:
+            with open(log_path, "a", encoding="utf-8") as log:
+                log.write(_redact_launch_line(type(exc).__name__ + ": " + str(exc) + "\n", secrets))
+        on_status({'status': 'error', 'log_path': log_path})
+        return None

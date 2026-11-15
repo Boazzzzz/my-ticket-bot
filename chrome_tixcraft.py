@@ -8,6 +8,7 @@ import argparse
 import base64
 import json
 import logging
+import math
 import os
 import platform
 import random
@@ -24,7 +25,9 @@ from urllib.parse import urlsplit
 import chromedriver_autoinstaller_max
 import requests
 from selenium import webdriver
-from selenium.common.exceptions import (NoAlertPresentException,
+from selenium.common.exceptions import (StaleElementReferenceException,
+                                        TimeoutException,
+                                        NoAlertPresentException,
                                         NoSuchWindowException,
                                         UnexpectedAlertPresentException,
                                         WebDriverException)
@@ -336,77 +339,24 @@ def get_chrome_options(webdriver_path, config_dict):
     return chrome_options
 
 def load_chromdriver_normal(config_dict, driver_type):
-    show_debug_message = True       # debug.
-    show_debug_message = False      # online
-
-    if config_dict["advanced"]["verbose"]:
-        show_debug_message = True
-
-    driver = None
-
-    Root_Dir = util.get_app_root()
-    webdriver_path = os.path.join(Root_Dir, "webdriver")
-    chromedriver_path = get_chromedriver_path(webdriver_path)
-
-    if not os.path.exists(webdriver_path):
-        os.mkdir(webdriver_path)
-
-    chrome_options = get_chrome_options(webdriver_path, config_dict)
+    # Selenium Manager defaults to a 300-second network wait. Respect an explicit
+    # user override while keeping an unavailable version service from hiding launch.
+    os.environ.setdefault("SE_TIMEOUT", "10")
+    webdriver_path = os.path.join(util.get_app_root(), "webdriver")
+    os.makedirs(webdriver_path, exist_ok=True)
+    options = get_chrome_options(webdriver_path, config_dict)
     try:
-        driver = webdriver.Chrome(service=Service(), options=chrome_options)
-    except Exception as exc:
-        if show_debug_message:
-            print("Selenium Manager launch failed:", exc)
-
-    if not os.path.exists(chromedriver_path):
-        print("WebDriver not exist, try to download to:", webdriver_path)
-        chromedriver_autoinstaller_max.install(path=webdriver_path, make_version_dir=False)
-
-    if not os.path.exists(chromedriver_path):
-        print("Please download chromedriver and extract zip to webdriver folder from this url:")
-        print("請下在面的網址下載與你chrome瀏覽器相同版本的chromedriver,解壓縮後放到webdriver目錄裡：")
-        print(CONST_CHROME_DRIVER_WEBSITE)
-    else:
-        chrome_service = Service(chromedriver_path)
-        try:
-            if driver is None:
-                driver = webdriver.Chrome(service=chrome_service, options=chrome_options)
-        except Exception as exc:
-            error_message = str(exc)
-            if show_debug_message:
-                print(exc)
-            left_part = None
-            if "Stacktrace:" in error_message:
-                left_part = error_message.split("Stacktrace:")[0]
-                print(left_part)
-
-            if "This version of ChromeDriver only supports Chrome version" in error_message:
-                print(CONST_CHROME_VERSION_NOT_MATCH_EN)
-                print(CONST_CHROME_VERSION_NOT_MATCH_TW)
-
-                # remove exist chromedriver, download again.
-                try:
-                    print("Deleting exist and download ChromeDriver again.")
-                    os.unlink(chromedriver_path)
-                except Exception as exc2:
-                    print(exc2)
-                    pass
-
-                chromedriver_autoinstaller_max.install(path=webdriver_path, make_version_dir=False)
-                chrome_service = Service(chromedriver_path)
-                try:
-                    chrome_options = get_chrome_options(webdriver_path, config_dict)
-                    driver = webdriver.Chrome(service=chrome_service, options=chrome_options)
-                except Exception as exc2:
-                    print("Selenium 4.11.0 Release with Chrome For Testing Browser.")
-                    try:
-                        chrome_options = get_chrome_options(webdriver_path, config_dict)
-                        driver = webdriver.Chrome(service=Service(), options=chrome_options)
-                    except Exception as exc3:
-                        print(exc3)
-                        pass
-
-    return driver
+        return webdriver.Chrome(service=Service(), options=options)
+    except WebDriverException as manager_error:
+        chromedriver_path = get_chromedriver_path(webdriver_path)
+        if not os.path.isfile(chromedriver_path):
+            raise WebDriverException(
+                "Chrome 啟動失敗：無法取得相容驅動，請檢查網路及 Chrome 安裝。"
+            ) from manager_error
+        print("Selenium Manager failed; trying the project's local ChromeDriver.")
+        # Do not run the legacy downloader after Manager already opened Chrome.
+        # A failed local fallback must propagate to the GUI's startup error report.
+        return webdriver.Chrome(service=Service(chromedriver_path), options=options)
 
 
 def get_uc_options(uc, config_dict, webdriver_path):
@@ -9602,14 +9552,7 @@ def ticketplus_date_auto_select(driver, config_dict):
                 if not formated_area_list is None:
                     if len(formated_area_list) == 0:
                         # in fact, no need reload on /activity/ page, should reload in /order/ page.
-                        try:
-                            driver.refresh()
-                            time.sleep(0.3)
-                        except Exception as exc:
-                            pass
-
-                        if config_dict["advanced"]["auto_reload_page_interval"] > 0:
-                            time.sleep(config_dict["advanced"]["auto_reload_page_interval"])
+                        ticketplus_refresh(driver, config_dict)
 
 
     return is_date_clicked
@@ -9979,15 +9922,7 @@ def ticketplus_order_expansion_panel(driver, config_dict, current_layout_style):
 
         if is_need_refresh:
             # vue mode, refresh need to check more conditions to check.
-            print('start to refresh page.')
-            try:
-                driver.refresh()
-                time.sleep(0.3)
-            except Exception as exc:
-                pass
-
-            if config_dict["advanced"]["auto_reload_page_interval"] > 0:
-                time.sleep(config_dict["advanced"]["auto_reload_page_interval"])
+            ticketplus_refresh(driver, config_dict)
 
     return is_price_assign_by_bot
 
@@ -10054,52 +9989,92 @@ def get_performance_log(driver, url_keyword):
     return url_list
 
 
-def ticketplus_order_auto_reload_coming_soon(driver):
-    #r = driver.execute_script("return window.performance.getEntries();")
-
-    is_reloading = False
-    url_keyword='apis.ticketplus.com.tw/config/api/'
-    url_list = get_performance_log(driver, url_keyword)
-    #print("url_list:", url_list)
-
-    getSeatsByTicketAreaIdUrl = ""
-    for requset_url in url_list:
-        if 'get?productId=' in requset_url:
-            getSeatsByTicketAreaIdUrl = requset_url
-            break
-        if 'get?ticketAreaId=' in requset_url:
-            getSeatsByTicketAreaIdUrl = requset_url
-            break
-
+def ticketplus_reload_interval(config_dict):
     try:
-        if len(getSeatsByTicketAreaIdUrl) > 0:
-            js = """//var t = JSON.parse(Cookies.get("user")) ? JSON.parse(Cookies.get("user")).access_token : "";
-//var callback = arguments[arguments.length - 1];
-fetch("%s",{
-//headers: {authorization: "Bearer ".concat(t)}
-}).then(function (response) {
-return response.json();
-}).then(function (data) {
-if(data.result.product.length>0)
-if(data.result.product[0].status=="pending") {
-location.reload();
-//callback(true);
-}
-}).catch(function (err){
-//console.log(err);
-});
-""" % getSeatsByTicketAreaIdUrl
-            driver.set_script_timeout(0.1)
-            driver.execute_script(js)
-            SeatsByTicketAreaDict = None
-            #SeatsByTicketAreaDict = driver.execute_async_script(js)
-            if not SeatsByTicketAreaDict is None:
-                is_reloading = SeatsByTicketAreaDict
-    except Exception as exc:
-        #print(exc)
-        pass
+        interval = float(config_dict.get("advanced", {}).get("auto_reload_page_interval", 0))
+        return max(1.0, interval) if math.isfinite(interval) else 1.0
+    except (TypeError, ValueError):
+        return 1.0
 
-    return is_reloading
+
+def ticketplus_runtime(driver):
+    return driver.__dict__.setdefault("_maxbot_ticketplus_runtime", {})
+
+
+def ticketplus_refresh(driver, config_dict):
+    state = ticketplus_runtime(driver)
+    now = time.monotonic()
+    if now - state.get("last_refresh", -float("inf")) < ticketplus_reload_interval(config_dict):
+        return False
+    # Record attempts too, so a failed refresh cannot spin on every main-loop tick.
+    state["last_refresh"] = now
+    driver.refresh()
+    return True
+
+
+def ticketplus_order_auto_reload_coming_soon(driver, config_dict=None):
+    config_dict = config_dict or {}
+    if not config_dict.get("tixcraft", {}).get("auto_reload_coming_soon_page", True):
+        return False
+    state = ticketplus_runtime(driver)
+    now = time.monotonic()
+    interval = ticketplus_reload_interval(config_dict)
+    if now - state.get("last_inventory_check", -float("inf")) < interval:
+        return state.get("inventory_checking", False)
+    state["last_inventory_check"] = now
+    url = driver.current_url
+    if state.get("inventory_page") != url:
+        state.update(inventory_page=url, inventory_url="", inventory_checking=False)
+    urls = get_performance_log(driver, 'apis.ticketplus.com.tw/config/api/')
+    for request_url in urls:
+        if 'get?productId=' in request_url or 'get?ticketAreaId=' in request_url:
+            state["inventory_url"] = request_url
+            break
+    if not state.get("inventory_url"):
+        return False
+    # Fetch once per document. Polling pending inventory is done through the same
+    # throttled refresh path as the date/area pages, never from an async JS callback.
+    status = driver.execute_script("""
+const url = arguments[0];
+let state = window.__maxbotTicketplusInventory;
+if (state && state.url === url) return state.status;
+state = {url: url, status: 'checking'};
+window.__maxbotTicketplusInventory = state;
+const controller = new AbortController();
+const timer = setTimeout(() => controller.abort(), 5000);
+fetch(url, {signal: controller.signal})
+  .then(response => {if (!response.ok) throw new Error('inventory'); return response.json();})
+  .then(data => {
+    const products = data && data.result && data.result.product;
+    state.status = Array.isArray(products) && products.length && products[0].status === 'pending'
+      ? 'pending' : 'ready';
+  })
+  .catch(() => {state.status = 'error';})
+  .finally(() => clearTimeout(timer));
+return state.status;
+""", state["inventory_url"])
+    state["inventory_checking"] = status in ('checking', 'pending')
+    if status == 'pending':
+        return ticketplus_refresh(driver, config_dict)
+    return state["inventory_checking"]
+
+
+def ticketplus_run_iteration(driver, url, config_dict, ocr, captcha_browser):
+    state = ticketplus_runtime(driver)
+    try:
+        ticketplus_main(driver, url, config_dict, ocr, captcha_browser)
+        state["transient_errors"] = 0
+    except WebDriverException as exc:
+        transient = isinstance(exc, (StaleElementReferenceException, TimeoutException)) or any(
+            text in str(exc).lower() for text in (
+                'document unloaded', 'target frame detached', 'not attached to an active page',
+                'execution context was destroyed'))
+        state["transient_errors"] = state.get("transient_errors", 0) + 1
+        if not transient or state["transient_errors"] >= 5:
+            raise
+        print("TicketPlus page changed while loading; retrying the next iteration.")
+        time.sleep(0.25)
+
 
 def ticketplus_order_ticket_count_matches(driver, config_dict):
     try:
@@ -10846,7 +10821,7 @@ def ticketplus_main(driver, url, config_dict, ocr, Captcha_Browser):
                     is_reload_at_webdriver = True
             if is_reload_at_webdriver:
                 # move below code to chrome extension.
-                is_reloading = ticketplus_order_auto_reload_coming_soon(driver)
+                is_reloading = ticketplus_order_auto_reload_coming_soon(driver, config_dict)
 
             if not is_reloading:
                 is_captcha_sent, ticketplus_dict = ticketplus_order(driver, config_dict, ocr, Captcha_Browser, ticketplus_dict)
@@ -10965,6 +10940,7 @@ def get_current_url(driver):
             if isinstance(str_exc, str):
                 if each_error_string in str_exc:
                     print('quit bot by error:', each_error_string, driver)
+                    util.report_bot_status('error')
                     is_quit_bot = True
                     driver.quit()
                     sys.exit()
@@ -11119,9 +11095,11 @@ def main(args):
                 resize_window(driver, config_dict)
         else:
             print("無法使用web driver，程式無法繼續工作")
-            sys.exit()
+            sys.exit(1)
     else:
-        print("Load config error!")
+        raise ValueError("Load config error!")
+
+    util.report_bot_status("ready")
 
     # internal variable. 說明：這是一個內部變數，請略過。
     url = ""
@@ -11238,7 +11216,7 @@ def main(args):
             kham_main(driver, url, config_dict, ocr, Captcha_Browser)
 
         if 'ticketplus.com' in url:
-            ticketplus_main(driver, url, config_dict, ocr, Captcha_Browser)
+            ticketplus_run_iteration(driver, url, config_dict, ocr, Captcha_Browser)
 
         if 'urbtix.hk' in url:
             urbtix_main(driver, url, config_dict)
@@ -11337,6 +11315,10 @@ if __name__ == "__main__":
     #jieba.initialize()
 
     if not debug_captcha_model_flag:
-        cli()
+        try:
+            cli()
+        except Exception:
+            util.report_bot_status("error")
+            raise
     else:
         test_captcha_model()

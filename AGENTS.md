@@ -40,18 +40,15 @@ py -3.12 -m venv .venv
 `cd /d` 會同時切換磁碟與資料夾。後續直接指定 `.venv` 的 Python，
 不需要另外啟用虛擬環境，也不要使用其他主機複製來的 `.venv`。
 
-### 3. 首次準備 ChromeDriver
+### 3. ChromeDriver
 
-目前專案啟動器仍保留舊的驅動下載邏輯，乾淨環境可能因此啟動中斷。
-先使用 Selenium Manager 取得相容驅動，再複製到專案使用的
-`webdriver\chromedriver.exe`。以下整段是一行，直接貼到 CMD 執行：
+首次執行由 Selenium Manager 自動取得相容的 ChromeDriver，之後可以使用快取，
+不需要手動下載或複製到 `webdriver`。Manager 成功後不再執行舊版下載器；
+Manager 失敗時，才嘗試專案中既有的本機驅動。
 
-```cmd
-.venv\Scripts\python.exe -c "from pathlib import Path; from shutil import copy2; from selenium import webdriver; d=webdriver.Chrome(); p=d.service.path; d.quit(); Path('webdriver').mkdir(exist_ok=True); copy2(p,'webdriver/chromedriver.exe'); print('ChromeDriver ready')"
-```
-
-Chrome 會短暫開啟後關閉，顯示 `ChromeDriver ready` 代表完成。
-若 Chrome 更新後出現驅動版本不相容，先停止機器人，再重新執行這個步驟。
+版本查詢與下載的單次網路請求預設最多等待 10 秒。網路較慢、首次下載需要
+更長時間時，可在同一個 CMD 視窗先執行 `set SE_TIMEOUT=60`，再開啟 GUI。
+這是單次請求的逾時值，不是整個瀏覽器啟動的總時間上限。
 
 ### 4. 開啟設定介面
 
@@ -62,6 +59,9 @@ Chrome 會短暫開啟後關閉，顯示 `ChromeDriver ready` 代表完成。
 設定購票網址、票數與票區；瀏覽器選 `Chrome`，引擎選 `Selenium`。
 需要自動按下一步時啟用「掛機模式」，按「存檔」後再按「執行」。
 目前遠大自動流程會到「付款結帳」頁停止，不會自動按「前往付款」。
+GUI 會顯示啟動中、已啟動或失敗，以及本機日誌路徑；啟動期間請勿重複點擊。
+日誌會遮蔽設定中的帳密與憑證，不要將使用者設定或原始截圖加入提交。
+遠大自動重整至少間隔 1 秒；設定較長間隔時仍使用較長值。
 
 ### 日後啟動
 
