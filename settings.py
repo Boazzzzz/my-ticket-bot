@@ -1129,6 +1129,33 @@ def poll_bot_launch_events():
                 'error': '啟動或執行失敗，請查看日誌。',
             }
             text = messages.get(status, status)
+            if status == 'ticketplus_progress':
+                progress = event.get('progress', {})
+                reasons = {
+                    'next_button_not_found': '等待選票頁與下一步按鈕載入。',
+                    'quantity_unreadable': '票數畫面更新中，等待重新讀取。',
+                    'invalid_quantity': '購票張數設定無效，請檢查設定。',
+                    'ticket_row_changed': '票區畫面更新中，稍後重試。',
+                    'selected_ticket_excluded': '所選票種符合排除關鍵字，停止補票與送出。',
+                    'quantity_or_area_mismatch': '張數或票區尚未符合設定，不送出下一步。',
+                    'activity_question_pending': '等待回答活動購票問題。',
+                    'waiting_for_navigation': '已點擊下一步，等待網站回應。',
+                    'blocking_dialog': '請先處理頁面中的彈窗。',
+                    'captcha_pending': '等待完成驗證碼。',
+                    'manual_mode': '目前為手動送出；開啟掛機模式可自動前進。',
+                    'next_button_disabled': '下一步尚未可用，等待網站更新。',
+                    'next_button_label_changed': '下一步按鈕內容改變，請查看頁面。',
+                    'next_click_failed': '下一步點擊未成功，請查看頁面或日誌。',
+                    'next_clicked': '已點擊下一步，等待網站回應。',
+                }
+                text = reasons.get(progress.get('reason'), '選票流程更新，請查看日誌。')
+                counts, expected = progress.get('observed'), progress.get('expected')
+                if (progress.get('reason') == 'quantity_or_area_mismatch'
+                        and isinstance(expected, int) and isinstance(counts, list)
+                        and all(isinstance(count, int) for count in counts) and sum(counts) < expected):
+                    text = '目前 %s 張，設定 %s 張；尚未補足，不送出下一步。' % (sum(counts), expected)
+                    if progress.get('increase_available') is False:
+                        text = '目前 %s 張，設定 %s 張；網站加號已停用，暫時無法補足。' % (sum(counts), expected)
             if event.get('log_path'):
                 text += '\n' + event['log_path']
             bot_launch_status.set(text)

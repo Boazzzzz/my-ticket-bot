@@ -9558,78 +9558,35 @@ def ticketplus_date_auto_select(driver, config_dict):
     return is_date_clicked
 
 def ticketplus_assign_ticket_number(target_area, config_dict):
-    show_debug_message = True       # debug.
-    show_debug_message = False      # online
-
-    if config_dict["advanced"]["verbose"]:
-        show_debug_message = True
-
-    is_price_assign_by_bot = False
-
-    ticket_number_div = None
+    expected = int(config_dict["ticket_number"])
+    if expected <= 0:
+        return False
     try:
-        my_css_selector = 'div.count-button > div'
-        ticket_number_div = target_area.find_element(By.CSS_SELECTOR, my_css_selector)
-    except Exception as exc:
-        if show_debug_message:
-            print("find div.count-button fail")
-        pass
+        for _ in range(expected):
+            # Vue can replace both the counter and the plus icon after a click.
+            # Never reuse either element across increments.
+            current = int(target_area.find_element(By.CSS_SELECTOR, 'div.count-button > div').text.strip())
+            if current >= expected:
+                return current == expected
+            icon = target_area.find_element(By.CSS_SELECTOR, 'button > span > i.mdi-plus')
+            button = icon.find_element(By.XPATH, 'ancestor::button[1]')
+            if not button.is_enabled() or button.get_attribute('aria-disabled') == 'true':
+                return False
+            button.click()
 
-    if not ticket_number_div is None:
-        ticket_number = config_dict["ticket_number"]
+            def increased(area):
+                count = int(area.find_element(By.CSS_SELECTOR, 'div.count-button > div').text.strip())
+                return count if count > current else False
 
-        ticket_number_text_int = 0
-        ticket_number_text = ""
-        try:
-            ticket_number_text = ticket_number_div.text
-        except Exception as exc:
-            print("get ticket_number_text fail")
-            pass
+            WebDriverWait(target_area, 1, poll_frequency=0.05,
+                          ignored_exceptions=(StaleElementReferenceException,)).until(increased)
+        actual = int(target_area.find_element(By.CSS_SELECTOR, 'div.count-button > div').text.strip())
+        return actual == expected
+    except (WebDriverException, ValueError, TypeError):
+        # A click is not proof that the requested quantity reached the page.
+        # The next iteration can reacquire a replaced ticket row and finish it.
+        return False
 
-        if ticket_number_text is None:
-            ticket_number_text = ""
-        if len(ticket_number_text) > 0:
-            ticket_number_text_int = int(ticket_number_text)
-            if show_debug_message:
-                print("ticket_number_text_int:", ticket_number_text_int)
-
-            if ticket_number_text_int < ticket_number:
-                ticket_number_plus = None
-                try:
-                    my_css_selector = 'button > span > i.mdi-plus'
-                    ticket_number_plus = target_area.find_element(By.CSS_SELECTOR, my_css_selector)
-                except Exception as exc:
-                    if show_debug_message:
-                        print("find ticket_number_plus fail")
-
-                if not ticket_number_plus is None:
-                    # add
-                    add_count = ticket_number - ticket_number_text_int
-                    if show_debug_message:
-                        print("add_count:", add_count)
-                    for i in range(add_count):
-                        if show_debug_message:
-                            print("click on plus button #",i)
-                        try:
-                            ticket_number_plus.click()
-                            is_price_assign_by_bot = True
-                            if i==0:
-                                time.sleep(0.2)
-
-                            ticket_number_text = ticket_number_div.text
-                            if len(ticket_number_text) > 0:
-                                ticket_number_text_int = int(ticket_number_text)
-                                if show_debug_message:
-                                    print("ticket_number_text_int:", ticket_number_text_int)
-                                if ticket_number_text_int >= ticket_number:
-                                    print("match target ticket count (now/target):", ticket_number_text_int, ticket_number)
-                                    break
-                        except Exception as exc:
-                            pass
-            else:
-                # match target ticket number.
-                is_price_assign_by_bot = True
-    return is_price_assign_by_bot
 
 def ticketplus_order_expansion_auto_select(driver, config_dict, area_keyword_item, current_layout_style):
     show_debug_message = True       # debug.
@@ -10076,22 +10033,30 @@ def ticketplus_run_iteration(driver, url, config_dict, ocr, captcha_browser):
         time.sleep(0.25)
 
 
+CONST_TICKETPLUS_TICKET_ROW_XPATH = ('ancestor::div['
+    'contains(concat(" ", normalize-space(@class), " "), " text-title ") or '
+    'contains(concat(" ", normalize-space(@class), " "), " v-expansion-panel ")][1]')
+
+
+def ticketplus_order_ticket_counts(driver):
+    counters = [element for element in driver.find_elements(By.CSS_SELECTOR, 'div.count-button > div')
+                if element.is_displayed()]
+    return [(element, int(element.text.strip())) for element in counters]
+
+
 def ticketplus_order_ticket_count_matches(driver, config_dict):
     try:
         expected = int(config_dict["ticket_number"])
-        counters = [element for element in driver.find_elements(By.CSS_SELECTOR, 'div.count-button > div')
-                    if element.is_displayed()]
-        counts = [int(element.text.strip()) for element in counters]
+        counters = ticketplus_order_ticket_counts(driver)
+        counts = [count for _, count in counters]
         if expected <= 0 or not counters or min(counts) < 0 or sum(counts) != expected:
             return False
         area_keyword = config_dict.get("area_auto_select", {}).get("area_keyword", "").strip()
         if area_keyword:
             keywords = json.loads('[' + area_keyword + ']')
-            for counter, count in zip(counters, counts):
+            for counter, count in counters:
                 if count:
-                    row = counter.find_element(By.XPATH, 'ancestor::div['
-                        'contains(concat(" ", normalize-space(@class), " "), " text-title ") or '
-                        'contains(concat(" ", normalize-space(@class), " "), " v-expansion-panel ")][1]')
+                    row = counter.find_element(By.XPATH, CONST_TICKETPLUS_TICKET_ROW_XPATH)
                     text = util.format_keyword_string(row.text)
                     if not any(isinstance(item, str) and all(
                             util.format_keyword_string(word) in text for word in item.split(' '))
@@ -10100,6 +10065,17 @@ def ticketplus_order_ticket_count_matches(driver, config_dict):
         return True
     except (WebDriverException, ValueError, TypeError):
         return False
+
+
+def ticketplus_order_progress(state, reason, **details):
+    signature = json.dumps(dict(reason=reason, **details), ensure_ascii=False, sort_keys=True)
+    now = time.monotonic()
+    if signature != state.get('order_progress') or now - state.get('order_progress_at', 0) >= 30:
+        print('TicketPlus next step:', signature)
+        state['order_progress_at'] = now
+    state['order_progress'] = signature
+    state['order_progress_reason'] = reason
+    return False, state
 
 
 def ticketplus_order_has_captcha(driver):
@@ -10142,47 +10118,90 @@ def ticketplus_order(driver, config_dict, ocr, Captcha_Browser, ticketplus_dict)
         except WebDriverException:
             pass
     if next_step_button is None:
-        return False, ticketplus_dict
+        return ticketplus_order_progress(ticketplus_dict, 'next_button_not_found')
 
-    is_price_assign_by_bot = False
-    if not next_step_button.is_enabled():
+    try:
+        expected = int(config_dict['ticket_number'])
+        counters = ticketplus_order_ticket_counts(driver)
+        counts = [count for _, count in counters]
+        if expected <= 0 or any(count < 0 for count in counts):
+            return ticketplus_order_progress(ticketplus_dict, 'invalid_quantity')
+    except (WebDriverException, ValueError, TypeError):
+        return ticketplus_order_progress(ticketplus_dict, 'quantity_unreadable')
+
+    total = sum(counts)
+    if 0 < total < expected:
+        selected = [(counter, count) for counter, count in counters if count > 0]
+        partial_config = dict(config_dict, ticket_number=total)
+        if len(selected) == 1 and ticketplus_order_ticket_count_matches(driver, partial_config):
+            try:
+                row = selected[0][0].find_element(By.XPATH, CONST_TICKETPLUS_TICKET_ROW_XPATH)
+                if util.reset_row_text_if_match_keyword_exclude(config_dict, row.text):
+                    return ticketplus_order_progress(ticketplus_dict, 'selected_ticket_excluded')
+                ticketplus_assign_ticket_number(row, config_dict)
+            except WebDriverException:
+                return ticketplus_order_progress(ticketplus_dict, 'ticket_row_changed')
+    elif total == 0:
         is_price_assign_by_bot = ticketplus_order_expansion_panel(driver, config_dict, current_layout_style)
         # A failed filtered click must not fall back to the first ticket on the page.
         if not is_price_assign_by_bot and not config_dict["area_auto_select"]["area_keyword"].strip():
-            is_price_assign_by_bot = ticketplus_assign_ticket_number(driver, config_dict)
+            ticketplus_assign_ticket_number(driver, config_dict)
 
-    count_matches = ticketplus_order_ticket_count_matches(driver, config_dict)
-    if not count_matches:
-        return False, ticketplus_dict
+    if not ticketplus_order_ticket_count_matches(driver, config_dict):
+        try:
+            observed = [count for _, count in ticketplus_order_ticket_counts(driver)]
+        except (WebDriverException, ValueError, TypeError):
+            observed = None
+        can_increase = None
+        try:
+            selected = [(counter, count) for counter, count in ticketplus_order_ticket_counts(driver) if count > 0]
+            if len(selected) == 1:
+                row = selected[0][0].find_element(By.XPATH, CONST_TICKETPLUS_TICKET_ROW_XPATH)
+                icon = row.find_element(By.CSS_SELECTOR, 'button > span > i.mdi-plus')
+                button = icon.find_element(By.XPATH, 'ancestor::button[1]')
+                can_increase = button.is_enabled() and button.get_attribute('aria-disabled') != 'true'
+        except (WebDriverException, ValueError, TypeError):
+            pass
+        return ticketplus_order_progress(ticketplus_dict, 'quantity_or_area_mismatch',
+                                         expected=expected, observed=observed, increase_available=can_increase)
 
     is_answer_sent, ticketplus_dict["fail_list"], is_question_popup = ticketplus_order_exclusive_code(
         driver, config_dict, ticketplus_dict["fail_list"])
     if is_question_popup and not is_answer_sent:
-        return False, ticketplus_dict
+        return ticketplus_order_progress(ticketplus_dict, 'activity_question_pending')
 
     current_url = driver.current_url
     if (ticketplus_dict.get("next_submit_url") == current_url
             and time.monotonic() - ticketplus_dict.get("next_submit_at", 0) < 10):
-        return False, ticketplus_dict
+        return ticketplus_order_progress(ticketplus_dict, 'waiting_for_navigation')
 
     is_step_submitted = False
     if ticketplus_order_has_captcha(driver):
-        # CAPTCHA submission retains the existing OCR/manual-mode behavior.
         if config_dict["ocr_captcha"]["enable"]:
             is_step_submitted = bool(ticketplus_order_ocr(driver, config_dict, ocr, Captcha_Browser))
-    elif config_dict["ocr_captcha"].get("force_submit", False) and count_matches:
+        if not is_step_submitted:
+            return ticketplus_order_progress(ticketplus_dict, 'captcha_pending')
+    elif not config_dict["ocr_captcha"].get("force_submit", False):
+        return ticketplus_order_progress(ticketplus_dict, 'manual_mode')
+    else:
+        if ticketplus_order_has_blocking_dialog(driver):
+            return ticketplus_order_progress(ticketplus_dict, 'blocking_dialog')
         try:
-            if not ticketplus_order_has_blocking_dialog(driver):
-                if next_step_button.is_enabled() and next_step_button.text.strip() == '下一步':
-                    next_step_button.click()
-                    is_step_submitted = True
-        except WebDriverException:
-            pass
+            if not next_step_button.is_enabled():
+                return ticketplus_order_progress(ticketplus_dict, 'next_button_disabled')
+            if next_step_button.text.strip() != '下一步':
+                return ticketplus_order_progress(ticketplus_dict, 'next_button_label_changed')
+            next_step_button.click()
+            is_step_submitted = True
+        except WebDriverException as exc:
+            return ticketplus_order_progress(ticketplus_dict, 'next_click_failed', error=type(exc).__name__)
 
     if is_step_submitted:
         ticketplus_dict["next_submit_url"] = current_url
         ticketplus_dict["next_submit_at"] = time.monotonic()
+        ticketplus_order_progress(ticketplus_dict, 'next_clicked', expected=expected)
     return is_step_submitted, ticketplus_dict
+
 
 def ticketplus_order_ocr(driver, config_dict, ocr, Captcha_Browser):
     away_from_keyboard_enable = config_dict["ocr_captcha"]["force_submit"]

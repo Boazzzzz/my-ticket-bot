@@ -63,6 +63,12 @@ class LaunchTests(unittest.TestCase):
         self.assertIn('--window_size=1200,800,0', command)
         self.assertNotIn('shell', popen.call_args.kwargs)
 
+    def test_ticket_progress_is_forwarded_to_gui(self):
+        _, events, _, _ = self.child("print('MAXBOT_STATUS:ready')\nprint('TicketPlus next step: {\"reason\": \"quantity_or_area_mismatch\", \"expected\": 2, \"observed\": [1]}')")
+        progress = [event for event in events if event['status'] == 'ticketplus_progress']
+        self.assertEqual(len(progress), 1)
+        self.assertEqual(progress[0]['progress']['observed'], [1])
+
     def test_credentials_are_redacted(self):
         config = {'advanced': {'ticketplus_account': 'test-account', 'ticketplus_password_plaintext': 'test-secret'}}
         _, _, log, _ = self.child("print('test-account test-secret cli-secret')\nprint(\"{'ticketplus_password': 'encoded-value'}\")", config,
@@ -109,6 +115,18 @@ class GuiLaunchTests(unittest.TestCase):
         self.assertFalse(settings.bot_launch_pending)
         self.assertIn('/tmp/test.log', settings.bot_launch_status.set.call_args.args[0])
         settings.btn_run.config.assert_called_with(state='normal')
+
+    def test_gui_explains_incomplete_quantity(self):
+        settings.bot_launch_events.put({'launch_id': 10, 'status': 'ticketplus_progress',
+            'progress': {'reason': 'quantity_or_area_mismatch', 'expected': 2, 'observed': [1]}})
+        settings.poll_bot_launch_events()
+        self.assertIn('目前 1 張，設定 2 張', settings.bot_launch_status.set.call_args.args[0])
+
+    def test_gui_explains_website_disabled_quantity_increase(self):
+        settings.bot_launch_events.put({'launch_id': 10, 'status': 'ticketplus_progress',
+            'progress': {'reason': 'quantity_or_area_mismatch', 'expected': 2, 'observed': [1], 'increase_available': False}})
+        settings.poll_bot_launch_events()
+        self.assertIn('網站加號已停用', settings.bot_launch_status.set.call_args.args[0])
 
     def test_old_process_exit_cannot_unlock_new_launch(self):
         settings.bot_launch_pending = True

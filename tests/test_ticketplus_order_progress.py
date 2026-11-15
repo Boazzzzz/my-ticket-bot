@@ -68,6 +68,102 @@ class TicketPlusOrderProgressTests(unittest.TestCase):
         self.assertEqual(self.driver.find_element('id', 'count').text, '1')
         self.assertEqual(self.next_clicks(), 1)
 
+    def load_replaced_quantity_controls(self, count=0):
+        self.load(count=count, disabled=count == 0)
+        self.driver.execute_script("""
+window.testCount = arguments[0];
+window.counterRoot = document.querySelector('.count-button');
+window.renderCounter = () => {
+  window.counterRoot.innerHTML =
+    '<div id="count">' + window.testCount + '</div>' +
+    '<button onclick="window.testCount++;window.renderCounter()"><span><i class="mdi-plus">+</i></span></button>';
+  document.getElementById('next').disabled = window.testCount === 0;
+};
+window.renderCounter();
+""", count)
+
+    def test_partial_quantity_continues_even_when_next_already_enabled(self):
+        self.load_replaced_quantity_controls(count=1)
+        self.config['ticket_number'] = 2
+        self.assertTrue(self.run_order())
+        self.assertEqual(self.driver.find_element('id', 'count').text, '2')
+        self.assertEqual(self.next_clicks(), 1)
+
+    def test_quantity_control_replacement_does_not_stall_two_ticket_selection(self):
+        self.load_replaced_quantity_controls()
+        self.config['ticket_number'] = 2
+        for _ in range(3):
+            if self.run_order(): break
+        self.assertEqual(self.driver.find_element('id', 'count').text, '2')
+        self.assertEqual(self.next_clicks(), 1)
+
+    def test_partial_quantity_in_manual_mode_fills_without_submitting(self):
+        self.load_replaced_quantity_controls(count=1)
+        self.config.update(ticket_number=2)
+        self.config['ocr_captcha']['force_submit'] = False
+        self.assertFalse(self.run_order())
+        self.assertEqual(self.driver.find_element('id', 'count').text, '2')
+        self.assertEqual(self.next_clicks(), 0)
+
+    def test_two_tickets_without_captcha_advances_with_ocr_enabled(self):
+        self.load(count=2)
+        self.config['ticket_number'] = 2
+        self.config['ocr_captcha']['enable'] = True
+        self.assertTrue(self.run_order())
+        self.assertEqual(self.next_clicks(), 1)
+
+    def test_partial_quantity_with_disabled_plus_stays_and_reports_counts(self):
+        self.load_replaced_quantity_controls(count=1)
+        self.config['ticket_number'] = 2
+        self.driver.execute_script("document.querySelector('.count-button button').disabled=true")
+        self.assertFalse(self.run_order())
+        self.assertEqual(self.state['order_progress_reason'], 'quantity_or_area_mismatch')
+        self.assertIn('"observed": [1]', self.state['order_progress'])
+        self.assertEqual(self.next_clicks(), 0)
+
+    def test_partial_wrong_ticket_keyword_does_not_increase_or_submit(self):
+        self.load_replaced_quantity_controls(count=1)
+        self.config['ticket_number'] = 2
+        self.config['area_auto_select']['area_keyword'] = '"9999"'
+        self.assertFalse(self.run_order())
+        self.assertEqual(self.driver.find_element('id', 'count').text, '1')
+        self.assertEqual(self.next_clicks(), 0)
+
+    def test_partial_excluded_ticket_is_not_increased_or_submitted(self):
+        self.load_replaced_quantity_controls(count=1)
+        self.config['ticket_number'] = 2
+        self.driver.execute_script("document.querySelector('.text-title > span').textContent='身障 NT.1800'")
+        self.assertFalse(self.run_order())
+        self.assertEqual(self.state['order_progress_reason'], 'selected_ticket_excluded')
+        self.assertEqual(self.driver.find_element('id', 'count').text, '1')
+        self.assertEqual(self.next_clicks(), 0)
+
+    def test_partial_second_ticket_row_is_completed_without_selecting_first_row(self):
+        self.load_replaced_quantity_controls(count=1)
+        self.config['ticket_number'] = 2
+        self.driver.execute_script("""
+const row=document.createElement('div');row.className='text-title';
+row.innerHTML='<span>Other ticket</span><div class="count-button"><div id="otherCount">0</div><button><span><i class="mdi-plus">+</i></span></button></div>';
+document.querySelector('.rwd-margin').prepend(row);
+""")
+        self.assertTrue(self.run_order())
+        self.assertEqual(self.driver.find_element('id', 'count').text, '2')
+        self.assertEqual(self.driver.find_element('id', 'otherCount').text, '0')
+        self.assertEqual(self.next_clicks(), 1)
+
+    def test_quantity_over_target_is_not_increased_or_submitted(self):
+        self.load_replaced_quantity_controls(count=3)
+        self.config['ticket_number'] = 2
+        self.assertFalse(self.run_order())
+        self.assertEqual(self.driver.find_element('id', 'count').text, '3')
+        self.assertEqual(self.next_clicks(), 0)
+
+    def test_unchanged_progress_reason_does_not_flood_logs(self):
+        with patch('builtins.print') as output, patch.object(bot.time, 'monotonic', return_value=1):
+            bot.ticketplus_order_progress(self.state, 'blocking_dialog')
+            bot.ticketplus_order_progress(self.state, 'blocking_dialog')
+        output.assert_called_once()
+
     def test_manual_mode_does_not_press_next(self):
         self.load()
         self.config['ocr_captcha']['force_submit'] = False
@@ -113,6 +209,15 @@ class TicketPlusOrderProgressTests(unittest.TestCase):
         with patch.object(bot, 'ticketplus_order_ocr', return_value=False) as ocr:
             self.assertFalse(self.run_order())
         ocr.assert_called_once()
+        self.assertEqual(self.next_clicks(), 0)
+
+    def test_captcha_dialog_preserves_existing_ocr_branch(self):
+        self.load(extra='<div class="v-dialog--active"><input placeholder="請輸入驗證碼"></div>')
+        self.config['ocr_captcha']['enable'] = True
+        with patch.object(bot, 'ticketplus_order_ocr', return_value=False) as ocr:
+            self.assertFalse(self.run_order())
+        ocr.assert_called_once()
+        self.assertEqual(self.state['order_progress_reason'], 'captcha_pending')
         self.assertEqual(self.next_clicks(), 0)
 
     def test_unanswered_activity_question_blocks_progress(self):

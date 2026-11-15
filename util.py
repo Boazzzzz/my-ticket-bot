@@ -2020,6 +2020,12 @@ def launch_maxbot(script_name="chrome_tixcraft", filename="", homepage="", kktix
                 log.write(_redact_launch_line(line, secrets))
                 log.flush()
                 marker = line.strip()
+                if line.startswith('TicketPlus next step: '):
+                    try:
+                        progress = json.loads(line.split(': ', 1)[1])
+                        on_status({'status': 'ticketplus_progress', 'progress': progress, 'log_path': log_path})
+                    except (ValueError, TypeError):
+                        pass
                 if marker == BOT_STATUS_PREFIX + 'ready':
                     ready = True
                     on_status({'status': 'ready', 'log_path': log_path})
