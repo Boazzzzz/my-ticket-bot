@@ -10145,7 +10145,14 @@ def ticketplus_order(driver, config_dict, ocr, Captcha_Browser, ticketplus_dict)
         return False, ticketplus_dict
 
     is_price_assign_by_bot = False
-    if not next_step_button.is_enabled():
+    try:
+        next_step_enabled = next_step_button.is_enabled()
+    except StaleElementReferenceException:
+        # Vue replaced the button after lookup. Reacquire it on the next tick,
+        # rather than terminating the bot with an otherwise usable browser.
+        print("TicketPlus next button changed while rendering; retrying.")
+        return False, ticketplus_dict
+    if not next_step_enabled:
         is_price_assign_by_bot = ticketplus_order_expansion_panel(driver, config_dict, current_layout_style)
         # A failed filtered click must not fall back to the first ticket on the page.
         if not is_price_assign_by_bot and not config_dict["area_auto_select"]["area_keyword"].strip():

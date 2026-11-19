@@ -1999,6 +1999,9 @@ def launch_maxbot(script_name="chrome_tixcraft", filename="", homepage="", kktix
     if on_status is None:
         return subprocess.Popen(command, cwd=working_dir, env=env)
 
+    # The log reader below always decodes UTF-8, including on Windows where
+    # redirected child output would otherwise use the local legacy code page.
+    env["PYTHONIOENCODING"] = "utf-8"
     # This worker reports through a queue; it never accesses Tk widgets directly.
     log_path = ""
     try:

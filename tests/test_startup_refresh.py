@@ -51,6 +51,14 @@ class LaunchTests(unittest.TestCase):
         self.assertEqual([e['status'] for e in events], ['starting', 'ready', 'error'])
         self.assertIn('test crash', log)
 
+    def test_logged_child_uses_utf8_even_with_ascii_parent_override(self):
+        source = "print('MAXBOT_STATUS:ready', flush=True)\nprint('\\u6e2c\\u8a66\\u65e5\\u8a8c')"
+        with patch.dict(os.environ, {'PYTHONIOENCODING': 'ascii'}):
+            process, events, log, _ = self.child(source)
+        self.assertEqual(process.returncode, 0)
+        self.assertEqual(events[-1]['status'], 'stopped')
+        self.assertIn('測試日誌', log)
+
     def test_error_marker_with_zero_exit_is_failure(self):
         _, events, _, _ = self.child("print('MAXBOT_STATUS:ready')\nprint('MAXBOT_STATUS:error')")
         self.assertEqual(events[-1]['status'], 'error')

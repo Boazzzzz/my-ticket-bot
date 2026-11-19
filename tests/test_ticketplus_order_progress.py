@@ -7,6 +7,7 @@ from unittest.mock import patch
 from urllib.parse import quote
 
 from selenium import webdriver
+from selenium.webdriver.remote.webelement import WebElement
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import chrome_tixcraft as bot
@@ -173,6 +174,26 @@ class TicketPlusOrderProgressTests(unittest.TestCase):
         self.load()
         self.assertTrue(self.run_order())
         self.assertFalse(self.run_order())
+        self.assertEqual(self.next_clicks(), 1)
+
+    def test_replaced_next_button_retries_without_ending_browser_session(self):
+        self.load()
+        original_is_displayed = WebElement.is_displayed
+
+        def replace_after_lookup(element):
+            displayed = original_is_displayed(element)
+            if element.get_attribute('id') == 'next':
+                self.driver.execute_script(
+                    'arguments[0].replaceWith(arguments[0].cloneNode(true));', element)
+            return displayed
+
+        # Reproduce the reported race: the button is replaced between lookup
+        # and is_enabled(). Repeated renders must not end the bot session.
+        with patch.object(WebElement, 'is_displayed', replace_after_lookup):
+            for _ in range(6):
+                self.assertFalse(self.run_order())
+        self.assertEqual(self.next_clicks(), 0)
+        self.assertTrue(self.run_order())
         self.assertEqual(self.next_clicks(), 1)
 
     def test_ocr_helper_returns_observed_submission_result(self):
