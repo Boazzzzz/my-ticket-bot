@@ -9558,78 +9558,33 @@ def ticketplus_date_auto_select(driver, config_dict):
     return is_date_clicked
 
 def ticketplus_assign_ticket_number(target_area, config_dict):
-    show_debug_message = True       # debug.
-    show_debug_message = False      # online
-
-    if config_dict["advanced"]["verbose"]:
-        show_debug_message = True
-
-    is_price_assign_by_bot = False
-
-    ticket_number_div = None
     try:
-        my_css_selector = 'div.count-button > div'
-        ticket_number_div = target_area.find_element(By.CSS_SELECTOR, my_css_selector)
-    except Exception as exc:
-        if show_debug_message:
-            print("find div.count-button fail")
-        pass
+        expected = int(config_dict["ticket_number"])
+        if expected <= 0:
+            return False
+        for _ in range(expected):
+            current = int(target_area.find_element(By.CSS_SELECTOR, 'div.count-button > div').text.strip())
+            if current >= expected:
+                return current == expected
+            icon = target_area.find_element(By.CSS_SELECTOR, 'button > span > i.mdi-plus')
+            button = icon.find_element(By.XPATH, 'ancestor::button[1]')
+            if not button.is_enabled() or button.get_attribute('aria-disabled') == 'true':
+                return False
+            script_driver = getattr(target_area, 'parent', target_area)
+            script_driver.execute_script('arguments[0].scrollIntoView({block: "center"});', button)
+            button.click()
 
-    if not ticket_number_div is None:
-        ticket_number = config_dict["ticket_number"]
+            def increased(area):
+                count = int(area.find_element(By.CSS_SELECTOR, 'div.count-button > div').text.strip())
+                return count if count > current else False
 
-        ticket_number_text_int = 0
-        ticket_number_text = ""
-        try:
-            ticket_number_text = ticket_number_div.text
-        except Exception as exc:
-            print("get ticket_number_text fail")
-            pass
-
-        if ticket_number_text is None:
-            ticket_number_text = ""
-        if len(ticket_number_text) > 0:
-            ticket_number_text_int = int(ticket_number_text)
-            if show_debug_message:
-                print("ticket_number_text_int:", ticket_number_text_int)
-
-            if ticket_number_text_int < ticket_number:
-                ticket_number_plus = None
-                try:
-                    my_css_selector = 'button > span > i.mdi-plus'
-                    ticket_number_plus = target_area.find_element(By.CSS_SELECTOR, my_css_selector)
-                except Exception as exc:
-                    if show_debug_message:
-                        print("find ticket_number_plus fail")
-
-                if not ticket_number_plus is None:
-                    # add
-                    add_count = ticket_number - ticket_number_text_int
-                    if show_debug_message:
-                        print("add_count:", add_count)
-                    for i in range(add_count):
-                        if show_debug_message:
-                            print("click on plus button #",i)
-                        try:
-                            ticket_number_plus.click()
-                            is_price_assign_by_bot = True
-                            if i==0:
-                                time.sleep(0.2)
-
-                            ticket_number_text = ticket_number_div.text
-                            if len(ticket_number_text) > 0:
-                                ticket_number_text_int = int(ticket_number_text)
-                                if show_debug_message:
-                                    print("ticket_number_text_int:", ticket_number_text_int)
-                                if ticket_number_text_int >= ticket_number:
-                                    print("match target ticket count (now/target):", ticket_number_text_int, ticket_number)
-                                    break
-                        except Exception as exc:
-                            pass
-            else:
-                # match target ticket number.
-                is_price_assign_by_bot = True
-    return is_price_assign_by_bot
+            # Continue as soon as Vue updates the number; do not sleep 0.2 s.
+            WebDriverWait(target_area, 1, poll_frequency=0.05,
+                          ignored_exceptions=(StaleElementReferenceException,)).until(increased)
+        actual = int(target_area.find_element(By.CSS_SELECTOR, 'div.count-button > div').text.strip())
+        return actual == expected
+    except (WebDriverException, ValueError, TypeError):
+        return False
 
 def ticketplus_order_expansion_auto_select(driver, config_dict, area_keyword_item, current_layout_style):
     show_debug_message = True       # debug.
@@ -10012,6 +9967,20 @@ def ticketplus_refresh(driver, config_dict):
     return True
 
 
+def ticketplus_order_has_selected_tickets(driver):
+    try:
+        for counter in driver.find_elements(By.CSS_SELECTOR, 'div.count-button > div'):
+            if counter.is_displayed():
+                try:
+                    if int(counter.text.strip()) > 0:
+                        return True
+                except ValueError:
+                    pass
+        return False
+    except WebDriverException:
+        return False
+
+
 def ticketplus_order_auto_reload_coming_soon(driver, config_dict=None):
     config_dict = config_dict or {}
     if not config_dict.get("tixcraft", {}).get("auto_reload_coming_soon_page", True):
@@ -10019,19 +9988,28 @@ def ticketplus_order_auto_reload_coming_soon(driver, config_dict=None):
     state = ticketplus_runtime(driver)
     now = time.monotonic()
     interval = ticketplus_reload_interval(config_dict)
-    if now - state.get("last_inventory_check", -float("inf")) < interval:
-        return state.get("inventory_checking", False)
-    state["last_inventory_check"] = now
     url = driver.current_url
     if state.get("inventory_page") != url:
-        state.update(inventory_page=url, inventory_url="", inventory_checking=False)
-    urls = get_performance_log(driver, 'apis.ticketplus.com.tw/config/api/')
-    for request_url in urls:
-        if 'get?productId=' in request_url or 'get?ticketAreaId=' in request_url:
-            state["inventory_url"] = request_url
-            break
+        state.update(inventory_page=url, inventory_url="", inventory_checking=False,
+                     last_inventory_check=-float("inf"), last_inventory_poll=-float("inf"))
+    # Do not refresh away a selection or delay its normal quantity/CAPTCHA checks.
+    if ticketplus_order_has_selected_tickets(driver):
+        state["inventory_checking"] = False
+        return False
+    if now - state.get("last_inventory_poll", -float("inf")) < 0.05:
+        return state.get("inventory_checking", False)
+    if not state.get("inventory_url"):
+        if now - state.get("last_inventory_check", -float("inf")) < interval:
+            return False
+        state["last_inventory_check"] = now
+        urls = get_performance_log(driver, 'apis.ticketplus.com.tw/config/api/')
+        for request_url in urls:
+            if 'get?productId=' in request_url or 'get?ticketAreaId=' in request_url:
+                state["inventory_url"] = request_url
+                break
     if not state.get("inventory_url"):
         return False
+    state["last_inventory_poll"] = now
     # Fetch once per document. Polling pending inventory is done through the same
     # throttled refresh path as the date/area pages, never from an async JS callback.
     status = driver.execute_script("""
@@ -10055,7 +10033,7 @@ return state.status;
 """, state["inventory_url"])
     state["inventory_checking"] = status in ('checking', 'pending')
     if status == 'pending':
-        return ticketplus_refresh(driver, config_dict)
+        ticketplus_refresh(driver, config_dict)
     return state["inventory_checking"]
 
 

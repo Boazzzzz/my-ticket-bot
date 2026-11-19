@@ -165,6 +165,7 @@ class RefreshTests(unittest.TestCase):
     def setUp(self):
         self.driver = Mock()
         self.driver.current_url = 'https://ticketplus.com.tw/order/test/session'
+        self.driver.find_elements.return_value = []
         self.config = {'advanced': {'auto_reload_page_interval': 0.1},
                        'tixcraft': {'auto_reload_coming_soon_page': True}}
 
@@ -191,15 +192,47 @@ class RefreshTests(unittest.TestCase):
         self.driver.get_log.assert_not_called()
         self.driver.execute_script.assert_not_called()
 
-    def test_inventory_query_not_repeated_each_tick(self):
+    def test_inventory_polling_does_not_rescan_performance_logs_each_tick(self):
         url = 'https://apis.ticketplus.com.tw/config/api/get?productId=test'
         self.driver.execute_script.return_value = 'checking'
         with patch.object(bot, 'get_performance_log', return_value=[url]) as log, \
              patch.object(bot.time, 'monotonic', side_effect=[0, 0.05, 0.1, 0.9]):
             for _ in range(4): self.assertTrue(bot.ticketplus_order_auto_reload_coming_soon(self.driver, self.config))
         log.assert_called_once()
-        self.driver.execute_script.assert_called_once()
+        self.assertEqual(self.driver.execute_script.call_count, 4)
         self.driver.set_script_timeout.assert_not_called()
+
+    def test_ready_inventory_does_not_wait_for_refresh_interval(self):
+        self.config['advanced']['auto_reload_page_interval'] = 5
+        self.driver.execute_script.side_effect = ['checking', 'ready']
+        with patch.object(bot, 'get_performance_log', return_value=[
+                'https://apis.ticketplus.com.tw/config/api/get?productId=test']), \
+                patch.object(bot.time, 'monotonic', side_effect=[0, 0.1]):
+            self.assertTrue(bot.ticketplus_order_auto_reload_coming_soon(self.driver, self.config))
+            self.assertFalse(bot.ticketplus_order_auto_reload_coming_soon(self.driver, self.config))
+        self.driver.refresh.assert_not_called()
+
+    def test_selected_quantity_skips_pending_inventory_and_refresh(self):
+        counter = Mock()
+        counter.is_displayed.return_value = True
+        counter.text = '1'
+        self.driver.find_elements.return_value = [counter]
+        bot.ticketplus_runtime(self.driver).update(inventory_page=self.driver.current_url,
+            last_inventory_check=0, inventory_checking=True)
+        with patch.object(bot.time, 'monotonic', return_value=0.1):
+            self.assertFalse(bot.ticketplus_order_auto_reload_coming_soon(self.driver, self.config))
+        self.driver.refresh.assert_not_called()
+        self.driver.execute_script.assert_not_called()
+
+    def test_pending_inventory_remains_blocked_between_refreshes(self):
+        self.driver.execute_script.return_value = 'pending'
+        with patch.object(bot, 'get_performance_log', return_value=[
+                'https://apis.ticketplus.com.tw/config/api/get?productId=test']), \
+                patch.object(bot.time, 'monotonic', return_value=0):
+            self.assertTrue(bot.ticketplus_order_auto_reload_coming_soon(self.driver, self.config))
+        with patch.object(bot.time, 'monotonic', return_value=0.1):
+            self.assertTrue(bot.ticketplus_order_auto_reload_coming_soon(self.driver, self.config))
+        self.driver.refresh.assert_called_once()
 
     def test_pending_inventory_uses_throttled_python_refresh(self):
         url = 'https://apis.ticketplus.com.tw/config/api/get?ticketAreaId=test'
@@ -258,7 +291,7 @@ window.fetch = () => {
             self.assertTrue(bot.ticketplus_order_auto_reload_coming_soon(self.driver, self.config))
         bot.WebDriverWait(self.driver, 5).until(lambda d: d.execute_script(
             'return window.__maxbotTicketplusInventory.status') == 'ready')
-        with patch.object(bot, 'get_performance_log', return_value=[]), patch.object(bot.time, 'monotonic', return_value=2):
+        with patch.object(bot, 'get_performance_log', return_value=[]), patch.object(bot.time, 'monotonic', return_value=0.1):
             self.assertFalse(bot.ticketplus_order_auto_reload_coming_soon(self.driver, self.config))
         self.assertEqual(self.driver.execute_script('return window.fetchCount'), 1)
         self.assertEqual(self.driver.timeouts.script, timeout)
